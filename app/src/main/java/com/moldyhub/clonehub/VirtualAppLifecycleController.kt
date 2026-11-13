@@ -36,7 +36,7 @@ class UnavailableVirtualAppRuntime : VirtualAppRuntime {
 sealed class InstanceLifecycleResult {
     data class Running(val instance: VirtualAppInstance) : InstanceLifecycleResult()
     data class Stopped(val instance: VirtualAppInstance) : InstanceLifecycleResult()
-    data class Failed(val instance: VirtualAppInstance, val reason: String) : InstanceLifecycleResult()
+    data class Failed(val instance: VirtualAppInstance?, val reason: String) : InstanceLifecycleResult()
 }
 
 /**
@@ -101,11 +101,5 @@ class VirtualAppLifecycleController(
     }
 
     private fun missingInstance(instanceId: String) =
-        InstanceLifecycleResult.Failed(
-            VirtualAppInstance(
-                instanceId = instanceId,
-                packageName = "com.moldyhub.missing"
-            ),
-            "Instance was not found."
-        )
+        InstanceLifecycleResult.Failed(null, "Instance $instanceId was not found.")
 }
