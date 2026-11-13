@@ -8,8 +8,12 @@ package com.moldyhub.clonehub.cve
 data class VirtualAppInstance(
     val instanceId: String,
     val packageName: String,
-    val state: InstanceState = InstanceState.STOPPED
+    val state: InstanceState = InstanceState.STOPPED,
+    val configuration: VirtualAppConfiguration = VirtualAppConfiguration()
 ) {
+    val identity: VirtualAppIdentity
+        get() = VirtualAppIdentity(instanceId, packageName)
+
     init {
         require(instanceId.isNotBlank()) { "instanceId must not be blank" }
         require(packageName.isNotBlank()) { "packageName must not be blank" }
@@ -20,6 +24,20 @@ data class VirtualAppInstance(
             "Invalid instance transition: $state -> $next"
         }
         return copy(state = next)
+    }
+
+    companion object {
+        fun create(
+            packageName: String,
+            configuration: VirtualAppConfiguration = VirtualAppConfiguration()
+        ): VirtualAppInstance {
+            val identity = VirtualAppIdentity.create(packageName)
+            return VirtualAppInstance(
+                instanceId = identity.instanceId,
+                packageName = identity.packageName,
+                configuration = configuration
+            )
+        }
     }
 }
 
