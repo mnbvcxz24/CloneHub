@@ -1,37 +1,32 @@
 package com.moldyhub.clonehub
 
 import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.io.File
-import java.io.FileOutputStream
-import java.util.concurrent.Executors
 
 /**
- * CloneHub V1 library shell.
+ * CloneHub V1 installed-app library.
  *
- * APKs are copied into app-private storage after selection so imports remain
- * available even when a document provider grants only temporary URI access.
- * This screen does not execute imported APKs; virtual execution is a separate
- * runtime milestone.
+ * The library lists launchable, user-installed apps on this device. Adding an
+ * app records its package name only; it does not clone or execute the app in
+ * an isolated runtime yet.
  */
 class MainActivity : Activity() {
 
     private lateinit var libraryContainer: LinearLayout
-    private lateinit var importStatus: TextView
-    private lateinit var importButton: Button
-
-    private val importExecutor = Executors.newSingleThreadExecutor()
+    private lateinit var installedContainer: LinearLayout
 
     private val preferences by lazy {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
@@ -59,23 +54,10 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "Your virtual app library"
+            text = "Choose installed apps for your library"
             textSize = 14f
             setTextColor(0xFF666672.toInt())
-            setPadding(0, dp(4), 0, dp(16))
-        }
-
-        importButton = Button(this).apply {
-            text = "Import APK"
-            isAllCaps = false
-            setOnClickListener { openApkPicker() }
-        }
-
-        importStatus = TextView(this).apply {
-            text = "Select an APK document to import it into CloneHub."
-            textSize = 12f
-            setTextColor(0xFF777783.toInt())
-            setPadding(0, dp(4), 0, dp(8))
+            setPadding(0, dp(4), 0, dp(12))
         }
 
         val diagnosticsButton = Button(this).apply {
@@ -84,29 +66,27 @@ class MainActivity : Activity() {
             setOnClickListener { exportDiagnostics() }
         }
 
-        val nextStepCard = TextView(this).apply {
-            text = "NEXT MILESTONE\nAPK inspection\nShow each imported app’s icon, package name, and version before we build the isolated runtime."
-            textSize = 13f
-            setTextColor(0xFF555560.toInt())
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            setBackgroundColor(0xFFEAEAF1.toInt())
-        }
-
-        val sectionTitle = TextView(this).apply {
-            text = "Imported apps"
-            textSize = 18f
-            setTextColor(0xFF17171C.toInt())
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding(0, dp(20), 0, dp(12))
-        }
-
+        val libraryTitle = sectionTitle("My library")
         libraryContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
 
+        val installedTitle = sectionTitle("Installed apps")
+        installedContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(libraryTitle)
+            addView(libraryContainer)
+            addView(installedTitle)
+            addView(installedContainer)
+        }
+
         val scrollView = ScrollView(this).apply {
             addView(
-                libraryContainer,
+                content,
                 ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
@@ -116,56 +96,192 @@ class MainActivity : Activity() {
 
         root.addView(title)
         root.addView(subtitle)
-        root.addView(importButton)
-        root.addView(importStatus)
         root.addView(diagnosticsButton)
-        root.addView(
-            nextStepCard,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(8) }
-        )
-        root.addView(sectionTitle)
         root.addView(
             scrollView,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
-            )
+            ).apply { topMargin = dp(8) }
         )
 
         setContentView(root)
         renderLibrary()
+        renderInstalledApps()
     }
 
-    private fun openApkPicker() {
-        DiagnosticsLogger.record(this, "Import APK tapped")
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "*/*"
-            addCategory(Intent.CATEGORY_OPENABLE)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    private fun sectionTitle(value: String) = TextView(this).apply {
+        text = value
+        textSize = 18f
+        setTextColor(0xFF17171C.toInt())
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        setPadding(0, dp(18), 0, dp(10))
+    }
+
+    private fun getInstalledUserApps(): List<InstalledApp> {
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return packageManager.queryIntentActivities(launcherIntent, 0)
+            .mapNotNull { resolveInfo ->
+                val appInfo = resolveInfo.activityInfo?.applicationInfo ?: return@mapNotNull null
+                val appPackage = appInfo.packageName
+                if (appPackage == packageName) return@mapNotNull null
+
+                val systemFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+                if ((appInfo.flags and systemFlags) != 0) return@mapNotNull null
+
+                try {
+                    InstalledApp(
+                        packageName = appPackage,
+                        label = packageManager.getApplicationLabel(appInfo).toString(),
+                        icon = packageManager.getApplicationIcon(appInfo)
+                    )
+                } catch (error: Exception) {
+                    DiagnosticsLogger.record(
+                        this,
+                        "Skipping installed app $appPackage: ${error.javaClass.simpleName}: ${error.message}"
+                    )
+                    null
+                }
+            }
+            .distinctBy { it.packageName }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    private fun renderInstalledApps() {
+        installedContainer.removeAllViews()
+        val apps = getInstalledUserApps()
+
+        if (apps.isEmpty()) {
+            installedContainer.addView(emptyMessage("No user-installed apps were found."))
+            return
         }
 
-        val resolvedActivity = packageManager.resolveActivity(intent, 0)?.activityInfo
-        DiagnosticsLogger.record(
-            this,
-            "Picker intent prepared; action=${intent.action}; type=${intent.type}; " +
-                "resolved=${resolvedActivity?.packageName}/${resolvedActivity?.name ?: "none"}"
-        )
+        apps.forEach { app ->
+            val alreadyAdded = getLibraryPackages().contains(app.packageName)
+            val row = appRow(app, if (alreadyAdded) "Added" else "Add") {
+                if (!alreadyAdded) {
+                    val packages = getLibraryPackages().toMutableSet()
+                    packages.add(app.packageName)
+                    saveLibraryPackages(packages)
+                    renderLibrary()
+                    renderInstalledApps()
+                    Toast.makeText(this, "${app.label} added to CloneHub", Toast.LENGTH_SHORT).show()
+                }
+            }
+            installedContainer.addView(row, rowLayoutParams())
+        }
+    }
 
-        try {
-            DiagnosticsLogger.record(this, "Calling startActivityForResult for file picker")
-            startActivityForResult(intent, REQUEST_GET_CONTENT)
-            DiagnosticsLogger.record(this, "startActivityForResult returned without throwing")
-        } catch (error: Exception) {
-            DiagnosticsLogger.record(
-                this,
-                "Picker launch exception: ${error.javaClass.name}: ${error.message}"
+    private fun renderLibrary() {
+        libraryContainer.removeAllViews()
+        val packages = getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }
+
+        if (packages.isEmpty()) {
+            libraryContainer.addView(emptyMessage("No apps added yet. Choose an app below."))
+            return
+        }
+
+        packages.forEach { appPackage ->
+            val app = try {
+                val info = packageManager.getApplicationInfo(appPackage, 0)
+                InstalledApp(
+                    packageName = appPackage,
+                    label = packageManager.getApplicationLabel(info).toString(),
+                    icon = packageManager.getApplicationIcon(info)
+                )
+            } catch (_: PackageManager.NameNotFoundException) {
+                null
+            }
+
+            if (app == null) {
+                val updated = getLibraryPackages().toMutableSet()
+                updated.remove(appPackage)
+                saveLibraryPackages(updated)
+            } else {
+                val row = appRow(app, "Remove") {
+                    val updated = getLibraryPackages().toMutableSet()
+                    updated.remove(appPackage)
+                    saveLibraryPackages(updated)
+                    renderLibrary()
+                    renderInstalledApps()
+                }
+                libraryContainer.addView(row, rowLayoutParams())
+            }
+        }
+    }
+
+    private fun appRow(app: InstalledApp, actionLabel: String, onAction: () -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(8), dp(10))
+            setBackgroundColor(0xFFFFFFFF.toInt())
+
+            val iconView = ImageView(this@MainActivity).apply {
+                setImageDrawable(app.icon)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            addView(iconView, LinearLayout.LayoutParams(dp(42), dp(42)))
+
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, dp(6), 0)
+                val name = TextView(this@MainActivity).apply {
+                    text = app.label
+                    textSize = 15f
+                    setTextColor(0xFF202027.toInt())
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                }
+                val packageNameView = TextView(this@MainActivity).apply {
+                    text = app.packageName
+                    textSize = 10f
+                    setTextColor(0xFF777783.toInt())
+                }
+                addView(name)
+                addView(packageNameView)
+            }
+            addView(
+                details,
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             )
-            Log.e("CloneHubDiagnostics", "Unable to launch file picker", error)
-            showPickerError(error)
+
+            val action = Button(this@MainActivity).apply {
+                text = actionLabel
+                isAllCaps = false
+                isEnabled = actionLabel != "Added"
+                setOnClickListener { onAction() }
+            }
+            addView(action)
+        }
+    }
+
+    private fun emptyMessage(message: String) = TextView(this).apply {
+        text = message
+        textSize = 13f
+        setTextColor(0xFF777783.toInt())
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        setBackgroundColor(0xFFFFFFFF.toInt())
+    }
+
+    private fun rowLayoutParams() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply { bottomMargin = dp(8) }
+
+    private fun getLibraryPackages(): Set<String> =
+        preferences.getStringSet(KEY_LIBRARY_PACKAGES, emptySet())?.toSet() ?: emptySet()
+
+    private fun saveLibraryPackages(packages: Set<String>) {
+        preferences.edit().putStringSet(KEY_LIBRARY_PACKAGES, packages).apply()
+    }
+
+    private fun getAppLabel(appPackage: String): String {
+        return try {
+            val info = packageManager.getApplicationInfo(appPackage, 0)
+            packageManager.getApplicationLabel(info).toString()
+        } catch (_: Exception) {
+            appPackage
         }
     }
 
@@ -196,241 +312,16 @@ class MainActivity : Activity() {
         }
     }
 
-    @Deprecated("Uses request codes to support the existing project baseline.")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        DiagnosticsLogger.record(
-            this,
-            "onActivityResult; requestCode=$requestCode; resultCode=$resultCode; " +
-                "uriScheme=${data?.data?.scheme}; uriAuthority=${data?.data?.authority}"
-        )
-        if (requestCode != REQUEST_GET_CONTENT) return
-        if (resultCode != RESULT_OK) return
-
-        val uri = data?.data
-        if (uri == null) {
-            Toast.makeText(this, "The picker did not return a file.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        setImporting(true)
-        importStatus.text = "Importing APK into CloneHub storage…"
-
-        importExecutor.execute {
-            try {
-                val displayName = queryDisplayName(uri) ?: "Imported APK"
-                val importedFile = copyIntoPrivateStorage(uri, displayName)
-                val entries = readEntries().toMutableList()
-                if (entries.none { it.localPath == importedFile.absolutePath }) {
-                    entries.add(
-                        LibraryEntry(
-                            name = displayName,
-                            uri = uri.toString(),
-                            localPath = importedFile.absolutePath
-                        )
-                    )
-                    writeEntries(entries)
-                }
-
-                runOnUiThread {
-                    setImporting(false)
-                    importStatus.text = "APK copied safely into CloneHub storage."
-                    renderLibrary()
-                    Toast.makeText(this, "APK added to library", Toast.LENGTH_SHORT).show()
-                }
-            } catch (error: Exception) {
-                DiagnosticsLogger.record(
-                    this,
-                    "APK import failed: ${error.javaClass.name}: ${error.message}"
-                )
-                Log.e("CloneHubDiagnostics", "APK import failed", error)
-                runOnUiThread {
-                    setImporting(false)
-                    importStatus.text = "Import failed. Check that the document provider can access this APK."
-                    Toast.makeText(
-                        this,
-                        error.message?.let { "Could not import APK: $it" } ?: "Could not import APK.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }
-    }
-
-    private fun setImporting(importing: Boolean) {
-        importButton.isEnabled = !importing
-        importButton.text = if (importing) "Importing…" else "Import APK"
-    }
-
-    private fun copyIntoPrivateStorage(uri: Uri, displayName: String): File {
-        val directory = File(filesDir, "imported_apks")
-        if (!directory.exists() && !directory.mkdirs()) {
-            throw IllegalStateException("Could not create CloneHub storage.")
-        }
-
-        val safeName = displayName
-            .substringAfterLast('/')
-            .replace(Regex("[^A-Za-z0-9._-]"), "_")
-            .ifBlank { "imported.apk" }
-        val finalName = if (safeName.endsWith(".apk", ignoreCase = true)) {
-            safeName
-        } else {
-            "$safeName.apk"
-        }
-        val destination = File(directory, "${System.currentTimeMillis()}_$finalName")
-
-        val input = contentResolver.openInputStream(uri)
-            ?: throw IllegalStateException("The selected provider could not open this file.")
-
-        input.use { source ->
-            FileOutputStream(destination).use { output ->
-                source.copyTo(output)
-                output.fd.sync()
-            }
-        }
-
-        if (destination.length() == 0L) {
-            destination.delete()
-            throw IllegalStateException("The selected file was empty.")
-        }
-
-        val packageInfo = packageManager.getPackageArchiveInfo(destination.absolutePath, 0)
-        if (packageInfo == null) {
-            destination.delete()
-            throw IllegalArgumentException("That file is not a valid Android APK. Choose an .apk file.")
-        }
-        return destination
-    }
-
-    private fun queryDisplayName(uri: Uri): String? {
-        return try {
-            contentResolver.query(
-                uri,
-                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (index >= 0) cursor.getString(index) else null
-                } else {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun showPickerError(error: Exception) {
-        DiagnosticsLogger.record(
-            this,
-            "Showing picker error: ${error.javaClass.name}: ${error.message}"
-        )
-        importStatus.text = "Could not open the file picker. Make sure Files by Google is available."
-        Toast.makeText(
-            this,
-            "Unable to open picker (${error.javaClass.simpleName}).",
-            Toast.LENGTH_LONG
-        ).show()
-    }
-
-    private fun renderLibrary() {
-        libraryContainer.removeAllViews()
-        val entries = readEntries()
-
-        if (entries.isEmpty()) {
-            val empty = TextView(this).apply {
-                text = "No apps imported yet. Select an APK to get started."
-                textSize = 14f
-                setTextColor(0xFF777783.toInt())
-                setPadding(dp(16), dp(18), dp(16), dp(18))
-                setBackgroundColor(0xFFFFFFFF.toInt())
-            }
-            libraryContainer.addView(
-                empty,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(10) }
-            )
-            return
-        }
-
-        entries.forEach { entry ->
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(16), dp(14), dp(16), dp(14))
-                setBackgroundColor(0xFFFFFFFF.toInt())
-            }
-
-            val name = TextView(this).apply {
-                text = entry.name
-                textSize = 16f
-                setTextColor(0xFF202027.toInt())
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-            }
-
-            val status = TextView(this).apply {
-                text = "Imported • Runtime not available in this build"
-                textSize = 12f
-                setTextColor(0xFF777783.toInt())
-                setPadding(0, dp(5), 0, 0)
-            }
-
-            card.addView(name)
-            card.addView(status)
-            libraryContainer.addView(
-                card,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(10) }
-            )
-        }
-    }
-
-    private fun readEntries(): List<LibraryEntry> {
-        val raw = preferences.getString(KEY_ENTRIES, "[]") ?: "[]"
-        return try {
-            val array = org.json.JSONArray(raw)
-            buildList {
-                for (index in 0 until array.length()) {
-                    val item = array.getJSONObject(index)
-                    add(
-                        LibraryEntry(
-                            name = item.getString("name"),
-                            uri = item.optString("uri", ""),
-                            localPath = item.optString("localPath").takeIf { it.isNotBlank() }
-                        )
-                    )
-                }
-            }
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    private fun writeEntries(entries: List<LibraryEntry>) {
-        val array = org.json.JSONArray()
-        entries.forEach { entry ->
-            array.put(
-                org.json.JSONObject()
-                    .put("name", entry.name)
-                    .put("uri", entry.uri)
-                    .put("localPath", entry.localPath)
-            )
-        }
-        preferences.edit().putString(KEY_ENTRIES, array.toString()).apply()
-    }
-
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
     override fun onResume() {
         super.onResume()
         DiagnosticsLogger.record(this, "Activity onResume")
+        if (::libraryContainer.isInitialized && ::installedContainer.isInitialized) {
+            renderLibrary()
+            renderInstalledApps()
+        }
     }
 
     override fun onPause() {
@@ -449,18 +340,11 @@ class MainActivity : Activity() {
             "Activity onDestroy; changingConfigurations=$isChangingConfigurations"
         )
         super.onDestroy()
-        importExecutor.shutdown()
     }
 
-    private data class LibraryEntry(
-        val name: String,
-        val uri: String,
-        val localPath: String? = null
+    private data class InstalledApp(
+        val packageName: String,
+        val label: String,
+        val icon: android.graphics.drawable.Drawable
     )
-
-    companion object {
-        private const val REQUEST_GET_CONTENT = 1001
-        private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
-        private const val KEY_ENTRIES = "entries"
-    }
 }
