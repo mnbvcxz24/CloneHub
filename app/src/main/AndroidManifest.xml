@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Strip the upstream sample app's broad permission list. CloneHub adds only
+         the permissions needed for the current runtime integration. -->
+    <uses-permission tools:node="removeAll" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -8,9 +24,11 @@
     </queries>
 
     <application
+        android:name=".CloneHubApplication"
         android:allowBackup="false"
         android:label="CloneHub"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"

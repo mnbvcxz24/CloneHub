@@ -17,21 +17,22 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * CloneHub V1 installed-app library.
- *
- * The library lists launchable, user-installed apps on this device. Adding an
- * app records its package name only; it does not clone or execute the app in
- * an isolated runtime yet.
+ * CloneHub installed-app library and BlackBox virtual-instance manager.
+ * Apps are sourced from the user's installed launcher apps; no APK picker is used.
  */
 class MainActivity : Activity() {
 
     private lateinit var libraryContainer: LinearLayout
     private lateinit var instancesContainer: LinearLayout
     private lateinit var installedContainer: LinearLayout
+    private lateinit var subtitleView: TextView
 
     private val preferences by lazy {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
     }
+
+    private val pendingInstanceKeys = mutableSetOf<String>()
+    private val instanceErrors = mutableMapOf<String, String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,9 +55,8 @@ class MainActivity : Activity() {
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
 
-        val subtitle = TextView(this).apply {
-            text = "Choose installed apps for your library"
-            textSize = 14f
+        subtitleView = TextView(this).apply {
+            textSize = 13f
             setTextColor(0xFF666672.toInt())
             setPadding(0, dp(4), 0, dp(12))
         }
@@ -103,7 +103,7 @@ class MainActivity : Activity() {
         }
 
         root.addView(title)
-        root.addView(subtitle)
+        root.addView(subtitleView)
         root.addView(diagnosticsButton)
         root.addView(
             scrollView,
@@ -115,9 +115,14 @@ class MainActivity : Activity() {
         )
 
         setContentView(root)
+        updateEngineStatus()
         renderLibrary()
         renderInstances()
         renderInstalledApps()
+    }
+
+    private fun updateEngineStatus() {
+        subtitleView.text = "Choose installed apps • ${BlackBoxRuntime.statusText()}"
     }
 
     private fun sectionTitle(value: String) = TextView(this).apply {
@@ -196,17 +201,7 @@ class MainActivity : Activity() {
         }
 
         packages.forEach { appPackage ->
-            val app = try {
-                val info = packageManager.getApplicationInfo(appPackage, 0)
-                InstalledApp(
-                    packageName = appPackage,
-                    label = packageManager.getApplicationLabel(info).toString(),
-                    icon = packageManager.getApplicationIcon(info)
-                )
-            } catch (_: PackageManager.NameNotFoundException) {
-                null
-            }
-
+            val app = getInstalledApp(appPackage)
             if (app == null) {
                 val updated = getLibraryPackages().toMutableSet()
                 updated.remove(appPackage)
@@ -215,15 +210,7 @@ class MainActivity : Activity() {
                 val row = appRow(
                     app = app,
                     actionLabel = "Remove",
-                    onAction = {
-                        val updated = getLibraryPackages().toMutableSet()
-                        updated.remove(appPackage)
-                        saveLibraryPackages(updated)
-                        saveInstanceLabels(appPackage, emptySet())
-                        renderLibrary()
-                        renderInstances()
-                        renderInstalledApps()
-                    },
+                    onAction = { removeLibraryApp(app) },
                     secondaryActionLabel = "Add instance",
                     onSecondaryAction = { addInstance(app) }
                 )
@@ -237,18 +224,53 @@ class MainActivity : Activity() {
         var instanceCount = 0
         getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }.forEach { appPackage ->
             val app = getInstalledApp(appPackage) ?: return@forEach
-            getInstanceLabels(appPackage).sortedBy { it.substringAfterLast(" ").toIntOrNull() ?: 0 }.forEach { instanceLabel ->
-                instanceCount++
-                instancesContainer.addView(instanceRow(app, instanceLabel) {
-                    val labels = getInstanceLabels(appPackage).toMutableSet()
-                    labels.remove(instanceLabel)
-                    saveInstanceLabels(appPackage, labels)
-                    renderInstances()
-                }, rowLayoutParams())
-            }
+            getInstanceLabels(appPackage)
+                .sortedBy { it.substringAfterLast(" ").toIntOrNull() ?: 0 }
+                .forEach { instanceLabel ->
+                    instanceCount++
+                    val key = instancePreferenceKey(appPackage, instanceLabel)
+                    val userId = preferences.getInt(userIdKey(key), -1)
+                    val ready = preferences.getBoolean(readyKey(key), false)
+                    val pending = pendingInstanceKeys.contains(key)
+                    val error = instanceErrors[key]
+
+                    val status = when {
+                        pending -> "Installing into isolated virtual user..."
+                        error != null -> "Setup failed: $error"
+                        ready && userId > 0 -> "Installed in isolated user #$userId"
+                        userId > 0 -> "Virtual user #$userId • setup incomplete"
+                        else -> "Not installed in virtual runtime yet"
+                    }
+
+                    val actionLabel = when {
+                        pending -> "Working"
+                        ready -> "Launch"
+                        userId > 0 -> "Retry"
+                        else -> "Set up"
+                    }
+
+                    instancesContainer.addView(
+                        instanceRow(
+                            app = app,
+                            instanceLabel = instanceLabel,
+                            status = status,
+                            actionLabel = actionLabel,
+                            actionEnabled = !pending,
+                            onAction = {
+                                if (ready && userId > 0) launchInstance(app, instanceLabel)
+                                else connectInstance(app, instanceLabel)
+                            },
+                            onRemove = { removeInstance(app, instanceLabel) }
+                        ),
+                        rowLayoutParams()
+                    )
+                }
         }
+
         if (instanceCount == 0) {
-            instancesContainer.addView(emptyMessage("No instances created yet. Add an instance from an app in My library."))
+            instancesContainer.addView(
+                emptyMessage("No instances yet. Add an instance from an app in My library.")
+            )
         }
     }
 
@@ -259,22 +281,176 @@ class MainActivity : Activity() {
         val instanceLabel = "Instance $nextNumber"
         labels.add(instanceLabel)
         saveInstanceLabels(app.packageName, labels)
-        DiagnosticsLogger.record(this, "Created instance profile $instanceLabel for ${app.packageName}; runtime not connected")
+        DiagnosticsLogger.record(this, "Created virtual instance request $instanceLabel for ${app.packageName}")
         renderInstances()
-        Toast.makeText(this, "$instanceLabel added. Virtual runtime is not connected yet.", Toast.LENGTH_LONG).show()
+        connectInstance(app, instanceLabel)
     }
 
-    private fun instanceRow(app: InstalledApp, instanceLabel: String, onRemove: () -> Unit): LinearLayout {
+    private fun connectInstance(app: InstalledApp, instanceLabel: String) {
+        val key = instancePreferenceKey(app.packageName, instanceLabel)
+        if (!pendingInstanceKeys.add(key)) return
+        instanceErrors.remove(key)
+        renderInstances()
+
+        Thread {
+            var userId = preferences.getInt(userIdKey(key), -1)
+            try {
+                if (userId <= 0) {
+                    userId = BlackBoxRuntime.allocateUserId(this)
+                    preferences.edit().putInt(userIdKey(key), userId).apply()
+                }
+
+                BlackBoxRuntime.installApp(app.packageName, userId)
+                preferences.edit().putBoolean(readyKey(key), true).apply()
+                DiagnosticsLogger.record(
+                    this,
+                    "Virtual install succeeded: package=${app.packageName}, instance=$instanceLabel, userId=$userId"
+                )
+                runOnUiThread {
+                    pendingInstanceKeys.remove(key)
+                    renderInstances()
+                    Toast.makeText(this, "$instanceLabel is ready in the virtual runtime.", Toast.LENGTH_LONG).show()
+                }
+            } catch (error: Throwable) {
+                if (userId > 0) runCatching { BlackBoxRuntime.deleteUser(userId) }
+                preferences.edit()
+                    .remove(userIdKey(key))
+                    .remove(readyKey(key))
+                    .apply()
+                val message = error.message ?: error.javaClass.simpleName
+                DiagnosticsLogger.record(
+                    this,
+                    "Virtual install failed: package=${app.packageName}, instance=$instanceLabel, error=${error.javaClass.name}: $message"
+                )
+                runOnUiThread {
+                    pendingInstanceKeys.remove(key)
+                    instanceErrors[key] = message.take(90)
+                    renderInstances()
+                    updateEngineStatus()
+                    Toast.makeText(this, "Could not set up $instanceLabel: $message", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun launchInstance(app: InstalledApp, instanceLabel: String) {
+        val key = instancePreferenceKey(app.packageName, instanceLabel)
+        val userId = preferences.getInt(userIdKey(key), -1)
+        if (userId <= 0) {
+            connectInstance(app, instanceLabel)
+            return
+        }
+
+        try {
+            DiagnosticsLogger.record(
+                this,
+                "Launching virtual app: package=${app.packageName}, instance=$instanceLabel, userId=$userId"
+            )
+            val launched = BlackBoxRuntime.launchApp(app.packageName, userId)
+            if (!launched) {
+                Toast.makeText(this, "BlackBox could not launch this app instance.", Toast.LENGTH_LONG).show()
+            }
+        } catch (error: Throwable) {
+            DiagnosticsLogger.record(
+                this,
+                "Virtual launch failed: ${error.javaClass.name}: ${error.message}"
+            )
+            Toast.makeText(
+                this,
+                "Virtual launch failed: ${error.message ?: error.javaClass.simpleName}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun removeInstance(app: InstalledApp, instanceLabel: String) {
+        val key = instancePreferenceKey(app.packageName, instanceLabel)
+        if (pendingInstanceKeys.contains(key)) {
+            Toast.makeText(this, "Wait for setup to finish first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val userId = preferences.getInt(userIdKey(key), -1)
+        Thread {
+            try {
+                if (userId > 0) BlackBoxRuntime.deleteUser(userId)
+                removeInstancePreferences(app.packageName, instanceLabel)
+                DiagnosticsLogger.record(
+                    this,
+                    "Removed virtual instance $instanceLabel for ${app.packageName}; userId=$userId"
+                )
+                runOnUiThread {
+                    instanceErrors.remove(key)
+                    renderInstances()
+                    Toast.makeText(this, "$instanceLabel removed.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Could not remove instance: ${error.message ?: error.javaClass.simpleName}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun removeLibraryApp(app: InstalledApp) {
+        val labels = getInstanceLabels(app.packageName)
+        val userIds = labels.mapNotNull { label ->
+            preferences.getInt(userIdKey(instancePreferenceKey(app.packageName, label)), -1)
+                .takeIf { it > 0 }
+        }
+
+        Thread {
+            try {
+                userIds.forEach { BlackBoxRuntime.deleteUser(it) }
+                labels.forEach { label -> removeInstancePreferences(app.packageName, label) }
+                val packages = getLibraryPackages().toMutableSet()
+                packages.remove(app.packageName)
+                saveLibraryPackages(packages)
+                saveInstanceLabels(app.packageName, emptySet())
+                DiagnosticsLogger.record(this, "Removed ${app.packageName} and ${userIds.size} virtual user(s)")
+                runOnUiThread {
+                    renderLibrary()
+                    renderInstances()
+                    renderInstalledApps()
+                    Toast.makeText(this, "${app.label} removed from CloneHub.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Could not remove app instances: ${error.message ?: error.javaClass.simpleName}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun instanceRow(
+        app: InstalledApp,
+        instanceLabel: String,
+        status: String,
+        actionLabel: String,
+        actionEnabled: Boolean,
+        onAction: () -> Unit,
+        onRemove: () -> Unit
+    ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(10), dp(8), dp(10))
             setBackgroundColor(0xFFFFFFFF.toInt())
+
             val iconView = ImageView(this@MainActivity).apply {
                 setImageDrawable(app.icon)
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
             addView(iconView, LinearLayout.LayoutParams(dp(42), dp(42)))
+
             val details = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), 0, dp(6), 0)
@@ -285,12 +461,18 @@ class MainActivity : Activity() {
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                 })
                 addView(TextView(this@MainActivity).apply {
-                    text = "Profile only • isolated runtime not available"
+                    text = status
                     textSize = 11f
                     setTextColor(0xFF777783.toInt())
                 })
             }
             addView(details, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Button(this@MainActivity).apply {
+                text = actionLabel
+                isAllCaps = false
+                isEnabled = actionEnabled
+                setOnClickListener { onAction() }
+            })
             addView(Button(this@MainActivity).apply {
                 text = "Remove"
                 isAllCaps = false
@@ -313,13 +495,31 @@ class MainActivity : Activity() {
     }
 
     private fun getInstanceLabels(appPackage: String): Set<String> =
-        preferences.getStringSet(instancePreferenceKey(appPackage), emptySet())?.toSet() ?: emptySet()
+        preferences.getStringSet(instanceListKey(appPackage), emptySet())?.toSet() ?: emptySet()
 
     private fun saveInstanceLabels(appPackage: String, labels: Set<String>) {
-        preferences.edit().putStringSet(instancePreferenceKey(appPackage), labels).apply()
+        preferences.edit().putStringSet(instanceListKey(appPackage), labels).apply()
     }
 
-    private fun instancePreferenceKey(appPackage: String) = "instances_$appPackage"
+    private fun instanceListKey(appPackage: String) = "instances_$appPackage"
+
+    private fun instancePreferenceKey(appPackage: String, instanceLabel: String) =
+        "${appPackage}_${instanceLabel.replace(' ', '_')}"
+
+    private fun userIdKey(instanceKey: String) = "virtual_user_$instanceKey"
+
+    private fun readyKey(instanceKey: String) = "virtual_ready_$instanceKey"
+
+    private fun removeInstancePreferences(appPackage: String, instanceLabel: String) {
+        val key = instancePreferenceKey(appPackage, instanceLabel)
+        preferences.edit()
+            .remove(userIdKey(key))
+            .remove(readyKey(key))
+            .apply()
+        val labels = getInstanceLabels(appPackage).toMutableSet()
+        labels.remove(instanceLabel)
+        saveInstanceLabels(appPackage, labels)
+    }
 
     private fun appRow(
         app: InstalledApp,
@@ -343,61 +543,37 @@ class MainActivity : Activity() {
             val details = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), 0, dp(6), 0)
-                val name = TextView(this@MainActivity).apply {
+                addView(TextView(this@MainActivity).apply {
                     text = app.label
                     textSize = 15f
                     setTextColor(0xFF202027.toInt())
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
-                }
-                val packageNameView = TextView(this@MainActivity).apply {
+                })
+                addView(TextView(this@MainActivity).apply {
                     text = app.packageName
                     textSize = 10f
                     setTextColor(0xFF777783.toInt())
-                }
-                addView(name)
-                addView(packageNameView)
+                })
             }
             addView(
                 details,
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             )
 
-            val action = Button(this@MainActivity).apply {
+            if (secondaryActionLabel != null && onSecondaryAction != null) {
+                addView(Button(this@MainActivity).apply {
+                    text = secondaryActionLabel
+                    isAllCaps = false
+                    setOnClickListener { onSecondaryAction() }
+                })
+            }
+
+            addView(Button(this@MainActivity).apply {
                 text = actionLabel
                 isAllCaps = false
                 isEnabled = actionLabel != "Added"
                 setOnClickListener { onAction() }
-            }
-            if (secondaryActionLabel != null && onSecondaryAction != null) {
-                val secondaryAction = Button(this@MainActivity).apply {
-                    text = secondaryActionLabel
-                    isAllCaps = false
-                    setOnClickListener { onSecondaryAction() }
-                }
-                addView(secondaryAction)
-            }
-            addView(action)
-        }
-    }
-
-    private fun launchInstalledApp(app: InstalledApp) {
-        try {
-            val launchIntent = packageManager.getLaunchIntentForPackage(app.packageName)
-            if (launchIntent == null) {
-                Toast.makeText(this, "No launch activity found for ${app.label}.", Toast.LENGTH_SHORT).show()
-                DiagnosticsLogger.record(this, "No launch intent for ${app.packageName}")
-                return
-            }
-
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            DiagnosticsLogger.record(this, "Launching installed app ${app.packageName}")
-            startActivity(launchIntent)
-        } catch (error: Exception) {
-            DiagnosticsLogger.record(
-                this,
-                "Launch failed for ${app.packageName}: ${error.javaClass.name}: ${error.message}"
-            )
-            Toast.makeText(this, "Could not open ${app.label}.", Toast.LENGTH_LONG).show()
+            })
         }
     }
 
@@ -463,6 +639,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         DiagnosticsLogger.record(this, "Activity onResume")
+        updateEngineStatus()
         if (::libraryContainer.isInitialized && ::instancesContainer.isInitialized && ::installedContainer.isInitialized) {
             renderLibrary()
             renderInstances()
