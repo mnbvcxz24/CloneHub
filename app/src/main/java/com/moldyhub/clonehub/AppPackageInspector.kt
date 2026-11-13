@@ -64,7 +64,7 @@ class AppPackageInspector(private val packageManager: PackageManager) {
 
             val apkPaths = buildList {
                 if (appInfo.sourceDir.isNotBlank()) add(appInfo.sourceDir)
-                appInfo.splitSourceDirs?.filter { it.isNotBlank() }?.let(::addAll)
+                appInfo.splitSourceDirs?.filter { it.isNotBlank() }?.let { addAll(it) }
             }.distinct()
 
             AppPackageInspectionResult.Success(
