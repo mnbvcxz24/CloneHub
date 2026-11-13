@@ -27,6 +27,6 @@ android {
     }
 }
 
+// Diagnostic build: deliberately excludes BlackBox and uses Android's default Application.
 dependencies {
-    implementation(project(":Bcore"))
 }
