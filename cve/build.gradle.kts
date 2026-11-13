@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.0.21"
+    id("org.jetbrains.kotlin.jvm")
 }
 
 group = "com.moldyhub.clonehub.cve"
