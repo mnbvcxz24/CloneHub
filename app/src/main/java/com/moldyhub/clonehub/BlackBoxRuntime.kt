@@ -19,6 +19,17 @@ internal object BlackBoxRuntime {
     var initializationError: String? = null
         private set
 
+    @Volatile
+    private var diagnosticStartupSkipped: Boolean = false
+
+    /** Bypasses all BlackBox initialization during the temporary startup isolation test. */
+    fun skipStartupForDiagnostics(context: Context) {
+        diagnosticStartupSkipped = true
+        initialized = false
+        initializationError = null
+        DiagnosticsLogger.record(context, "DIAGNOSTIC TEST: BlackBox attach/create startup skipped")
+    }
+
     fun attach(application: Application, base: Context) {
         try {
             val core = BlackBoxCore.get()
@@ -57,6 +68,7 @@ internal object BlackBoxRuntime {
     }
 
     fun statusText(): String = when {
+        diagnosticStartupSkipped -> "BlackBox startup skipped (diagnostic test)"
         initialized -> "BlackBox engine initialized"
         initializationError != null -> "BlackBox unavailable: $initializationError"
         else -> "BlackBox engine starting"
