@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "com.moldyhub.clonehub"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 28
-        versionCode = 1
-        versionName = "0.1.0-alpha01"
+        versionCode = 2
+        versionName = "0.1.0-alpha02"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
