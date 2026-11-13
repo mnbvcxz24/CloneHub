@@ -31,6 +31,10 @@ class MainActivity : Activity() {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
     }
 
+    private val instanceStore by lazy {
+        VirtualAppInstanceStore(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -201,7 +205,7 @@ class MainActivity : Activity() {
                         val updated = getLibraryPackages().toMutableSet()
                         updated.remove(appPackage)
                         saveLibraryPackages(updated)
-                        saveInstanceLabels(appPackage, emptySet())
+                        instanceStore.removeAllForPackage(appPackage)
                         renderLibrary()
                         renderInstances()
                         renderInstalledApps()
@@ -219,12 +223,10 @@ class MainActivity : Activity() {
         var instanceCount = 0
         getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }.forEach { appPackage ->
             val app = getInstalledApp(appPackage) ?: return@forEach
-            getInstanceLabels(appPackage).sortedBy { it.substringAfterLast(" ").toIntOrNull() ?: 0 }.forEach { instanceLabel ->
+            instanceStore.getForPackage(appPackage).forEach { instance ->
                 instanceCount++
-                instancesContainer.addView(instanceRow(app, instanceLabel) {
-                    val labels = getInstanceLabels(appPackage).toMutableSet()
-                    labels.remove(instanceLabel)
-                    saveInstanceLabels(appPackage, labels)
+                instancesContainer.addView(instanceRow(app, instance) {
+                    instanceStore.remove(instance.instanceId)
                     renderInstances()
                 }, rowLayoutParams())
             }
@@ -235,17 +237,18 @@ class MainActivity : Activity() {
     }
 
     private fun addInstance(app: InstalledApp) {
-        val labels = getInstanceLabels(app.packageName).toMutableSet()
-        var nextNumber = 1
-        while (labels.contains("Instance $nextNumber")) nextNumber++
-        val instanceLabel = "Instance $nextNumber"
-        labels.add(instanceLabel)
-        saveInstanceLabels(app.packageName, labels)
+        val existing = instanceStore.getForPackage(app.packageName).size
+        val instanceName = "Instance ${existing + 1}"
+        val instance = instanceStore.create(app.packageName, instanceName)
         renderInstances()
-        Toast.makeText(this, "$instanceLabel added. Virtual runtime is not connected yet.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "${instance.configuration.displayName} created and saved.", Toast.LENGTH_SHORT).show()
     }
 
-    private fun instanceRow(app: InstalledApp, instanceLabel: String, onRemove: () -> Unit): LinearLayout {
+    private fun instanceRow(
+        app: InstalledApp,
+        instance: com.moldyhub.clonehub.cve.VirtualAppInstance,
+        onRemove: () -> Unit
+    ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -260,13 +263,13 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), 0, dp(6), 0)
                 addView(TextView(this@MainActivity).apply {
-                    text = "${app.label} • $instanceLabel"
+                    text = "${app.label} • ${instance.configuration.displayName ?: "Instance"}"
                     textSize = 14f
                     setTextColor(0xFF202027.toInt())
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                 })
                 addView(TextView(this@MainActivity).apply {
-                    text = "Profile only • isolated runtime not available"
+                    text = "${instance.state.name} • ID ${instance.instanceId.take(8)} • runtime integration pending"
                     textSize = 11f
                     setTextColor(0xFF777783.toInt())
                 })
@@ -292,15 +295,6 @@ class MainActivity : Activity() {
             null
         }
     }
-
-    private fun getInstanceLabels(appPackage: String): Set<String> =
-        preferences.getStringSet(instancePreferenceKey(appPackage), emptySet())?.toSet() ?: emptySet()
-
-    private fun saveInstanceLabels(appPackage: String, labels: Set<String>) {
-        preferences.edit().putStringSet(instancePreferenceKey(appPackage), labels).apply()
-    }
-
-    private fun instancePreferenceKey(appPackage: String) = "instances_$appPackage"
 
     private fun appRow(
         app: InstalledApp,
