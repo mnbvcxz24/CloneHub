@@ -1,28 +1,38 @@
 package com.moldyhub.clonehub
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.util.Locale
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 /**
- * CloneHub V1 shell.
+ * CloneHub V1 library shell.
  *
- * This screen imports APK files into the app library. It does not install,
- * modify, or execute imported APKs. Virtual execution will be added only
- * after the isolated runtime has been implemented and tested.
+ * APKs are copied into app-private storage after selection so imports remain
+ * available even when a document provider grants only temporary URI access.
+ * This screen does not execute imported APKs; virtual execution is a separate
+ * runtime milestone.
  */
 class MainActivity : Activity() {
 
     private lateinit var libraryContainer: LinearLayout
+    private lateinit var importStatus: TextView
+    private lateinit var importButton: Button
+    private lateinit var alternateImportButton: Button
+
+    private val importExecutor = Executors.newSingleThreadExecutor()
+
     private val preferences by lazy {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
     }
@@ -47,13 +57,26 @@ class MainActivity : Activity() {
             text = "Your virtual app library"
             textSize = 14f
             setTextColor(0xFF666672.toInt())
-            setPadding(0, dp(4), 0, dp(20))
+            setPadding(0, dp(4), 0, dp(16))
         }
 
-        val importButton = Button(this).apply {
+        importButton = Button(this).apply {
             text = "Import APK"
             isAllCaps = false
-            setOnClickListener { openApkPicker() }
+            setOnClickListener { openApkPicker(REQUEST_OPEN_DOCUMENT) }
+        }
+
+        alternateImportButton = Button(this).apply {
+            text = "Use alternate picker"
+            isAllCaps = false
+            setOnClickListener { openApkPicker(REQUEST_GET_CONTENT) }
+        }
+
+        importStatus = TextView(this).apply {
+            text = "If the device's document picker fails, try the alternate picker."
+            textSize = 12f
+            setTextColor(0xFF777783.toInt())
+            setPadding(0, dp(4), 0, dp(8))
         }
 
         val sectionTitle = TextView(this).apply {
@@ -61,7 +84,7 @@ class MainActivity : Activity() {
             textSize = 18f
             setTextColor(0xFF17171C.toInt())
             typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding(0, dp(24), 0, dp(12))
+            setPadding(0, dp(20), 0, dp(12))
         }
 
         libraryContainer = LinearLayout(this).apply {
@@ -81,6 +104,8 @@ class MainActivity : Activity() {
         root.addView(title)
         root.addView(subtitle)
         root.addView(importButton)
+        root.addView(alternateImportButton)
+        root.addView(importStatus)
         root.addView(sectionTitle)
         root.addView(
             scrollView,
@@ -95,49 +120,160 @@ class MainActivity : Activity() {
         renderLibrary()
     }
 
-    private fun openApkPicker() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/vnd.android.package-archive"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+    private fun openApkPicker(requestCode: Int) {
+        val action = if (requestCode == REQUEST_OPEN_DOCUMENT) {
+            Intent.ACTION_OPEN_DOCUMENT
+        } else {
+            Intent.ACTION_GET_CONTENT
         }
-        startActivityForResult(intent, REQUEST_IMPORT_APK)
+
+        val intent = Intent(action).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = APK_MIME_TYPE
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (requestCode == REQUEST_OPEN_DOCUMENT) {
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+        }
+
+        try {
+            startActivityForResult(intent, requestCode)
+        } catch (_: ActivityNotFoundException) {
+            if (requestCode == REQUEST_OPEN_DOCUMENT) {
+                openApkPicker(REQUEST_GET_CONTENT)
+            } else {
+                showPickerError()
+            }
+        } catch (_: SecurityException) {
+            if (requestCode == REQUEST_OPEN_DOCUMENT) {
+                openApkPicker(REQUEST_GET_CONTENT)
+            } else {
+                showPickerError()
+            }
+        } catch (_: RuntimeException) {
+            if (requestCode == REQUEST_OPEN_DOCUMENT) {
+                openApkPicker(REQUEST_GET_CONTENT)
+            } else {
+                showPickerError()
+            }
+        }
     }
 
-    @Deprecated("Kept compatible with the initial minSdk baseline.")
+    @Deprecated("Uses request codes to support the existing project baseline.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_IMPORT_APK || resultCode != RESULT_OK) return
+        if (requestCode != REQUEST_OPEN_DOCUMENT && requestCode != REQUEST_GET_CONTENT) return
+        if (resultCode != RESULT_OK) return
 
-        val uri = data?.data ?: return
-        val takeFlags = data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
-        try {
-            contentResolver.takePersistableUriPermission(uri, takeFlags)
-        } catch (_: SecurityException) {
-            // Some document providers grant only a temporary read permission.
+        val uri = data?.data
+        if (uri == null) {
+            Toast.makeText(this, "The picker did not return a file.", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        val displayName = queryDisplayName(uri) ?: "Imported APK"
-        val existing = readEntries().toMutableList()
-        if (existing.none { it.uri == uri.toString() }) {
-            existing.add(LibraryEntry(displayName, uri.toString()))
-            writeEntries(existing)
+        setImporting(true)
+        importStatus.text = "Importing APK into CloneHub storage…"
+
+        importExecutor.execute {
+            try {
+                val displayName = queryDisplayName(uri) ?: "Imported APK"
+                val importedFile = copyIntoPrivateStorage(uri, displayName)
+                val entries = readEntries().toMutableList()
+                if (entries.none { it.localPath == importedFile.absolutePath }) {
+                    entries.add(
+                        LibraryEntry(
+                            name = displayName,
+                            uri = uri.toString(),
+                            localPath = importedFile.absolutePath
+                        )
+                    )
+                    writeEntries(entries)
+                }
+
+                runOnUiThread {
+                    setImporting(false)
+                    importStatus.text = "APK copied safely into CloneHub storage."
+                    renderLibrary()
+                    Toast.makeText(this, "APK added to library", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    setImporting(false)
+                    importStatus.text = "Import failed. Try the alternate picker or another file provider."
+                    Toast.makeText(
+                        this,
+                        error.message?.let { "Could not import APK: $it" } ?: "Could not import APK.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun setImporting(importing: Boolean) {
+        importButton.isEnabled = !importing
+        alternateImportButton.isEnabled = !importing
+        importButton.text = if (importing) "Importing…" else "Import APK"
+    }
+
+    private fun copyIntoPrivateStorage(uri: Uri, displayName: String): File {
+        val directory = File(filesDir, "imported_apks")
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalStateException("Could not create CloneHub storage.")
         }
 
-        renderLibrary()
-        Toast.makeText(this, "APK added to library", Toast.LENGTH_SHORT).show()
+        val safeName = displayName
+            .substringAfterLast('/')
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .ifBlank { "imported.apk" }
+        val finalName = if (safeName.endsWith(".apk", ignoreCase = true)) {
+            safeName
+        } else {
+            "$safeName.apk"
+        }
+        val destination = File(directory, "${System.currentTimeMillis()}_$finalName")
+
+        val input = contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("The selected provider could not open this file.")
+
+        input.use { source ->
+            FileOutputStream(destination).use { output ->
+                source.copyTo(output)
+                output.fd.sync()
+            }
+        }
+
+        if (destination.length() == 0L) {
+            destination.delete()
+            throw IllegalStateException("The selected file was empty.")
+        }
+        return destination
     }
 
     private fun queryDisplayName(uri: Uri): String? {
-        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor ->
+        return try {
+            contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (index >= 0) return cursor.getString(index)
+                    if (index >= 0) cursor.getString(index) else null
+                } else {
+                    null
                 }
             }
-        return null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun showPickerError() {
+        importStatus.text = "No compatible file picker was found. Install or enable a file manager."
+        Toast.makeText(this, "No compatible APK picker is available.", Toast.LENGTH_LONG).show()
     }
 
     private fun renderLibrary() {
@@ -202,7 +338,13 @@ class MainActivity : Activity() {
             buildList {
                 for (index in 0 until array.length()) {
                     val item = array.getJSONObject(index)
-                    add(LibraryEntry(item.getString("name"), item.getString("uri")))
+                    add(
+                        LibraryEntry(
+                            name = item.getString("name"),
+                            uri = item.optString("uri", ""),
+                            localPath = item.optString("localPath").takeIf { it.isNotBlank() }
+                        )
+                    )
                 }
             }
         } catch (_: Exception) {
@@ -217,6 +359,7 @@ class MainActivity : Activity() {
                 org.json.JSONObject()
                     .put("name", entry.name)
                     .put("uri", entry.uri)
+                    .put("localPath", entry.localPath)
             )
         }
         preferences.edit().putString(KEY_ENTRIES, array.toString()).apply()
@@ -225,10 +368,21 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
-    private data class LibraryEntry(val name: String, val uri: String)
+    override fun onDestroy() {
+        super.onDestroy()
+        importExecutor.shutdown()
+    }
+
+    private data class LibraryEntry(
+        val name: String,
+        val uri: String,
+        val localPath: String? = null
+    )
 
     companion object {
-        private const val REQUEST_IMPORT_APK = 1001
+        private const val REQUEST_OPEN_DOCUMENT = 1001
+        private const val REQUEST_GET_CONTENT = 1002
+        private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         private const val KEY_ENTRIES = "entries"
     }
 }
