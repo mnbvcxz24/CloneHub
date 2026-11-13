@@ -15,6 +15,7 @@ import java.io.File
  */
 class VirtualAppInstanceStore(context: Context) {
     private val preferences = context.getSharedPreferences("clonehub_instances", Context.MODE_PRIVATE)
+    private val legacyPreferences = context.getSharedPreferences("clonehub_library", Context.MODE_PRIVATE)
     private val rootDirectory = File(context.filesDir, "instances")
 
     @Synchronized
@@ -53,7 +54,8 @@ class VirtualAppInstanceStore(context: Context) {
     }
 
     private fun readAll(): List<VirtualAppInstance> {
-        val raw = preferences.getString(KEY_INSTANCES, null) ?: return emptyList()
+        val raw = preferences.getString(KEY_INSTANCES, null)
+        if (raw == null) return migrateLegacyProfiles()
         return try {
             val array = JSONArray(raw)
             buildList {
@@ -74,6 +76,29 @@ class VirtualAppInstanceStore(context: Context) {
         }
     }
 
+    /** Preserve profiles created by the first UI, which stored display labels only. */
+    private fun migrateLegacyProfiles(): List<VirtualAppInstance> {
+        val migrated = mutableListOf<VirtualAppInstance>()
+        legacyPreferences.all.forEach { (key, value) ->
+            if (!key.startsWith("instances_")) return@forEach
+            val packageName = key.removePrefix("instances_")
+            val labels = value as? Set<*> ?: return@forEach
+            labels.filterIsInstance<String>().forEach { label ->
+                try {
+                    val directoryName = "instance_" + java.util.UUID.randomUUID().toString()
+                    val instance = VirtualAppInstance.create(
+                        packageName, VirtualAppConfiguration(label, directoryName)
+                    )
+                    val directory = File(rootDirectory, directoryName)
+                    if (directory.mkdirs() || directory.isDirectory) migrated.add(instance)
+                } catch (_: IllegalArgumentException) {
+                    // Ignore invalid legacy records rather than blocking startup.
+                }
+            }
+        }
+        writeAll(migrated)
+        return migrated
+    }
     private fun writeAll(instances: List<VirtualAppInstance>) {
         val array = JSONArray()
         instances.forEach { instance ->
