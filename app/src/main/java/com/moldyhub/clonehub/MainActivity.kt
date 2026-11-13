@@ -128,7 +128,7 @@ class MainActivity : Activity() {
 
     private fun openApkPicker() {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = APK_MIME_TYPE
+            type = "*/*"
             addCategory(Intent.CATEGORY_OPENABLE)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
