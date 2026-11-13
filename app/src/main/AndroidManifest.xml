@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
+        android:name=".CloneHubApplication"
         android:allowBackup="false"
         android:label="CloneHub"
         android:supportsRtl="true"
