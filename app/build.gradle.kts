@@ -31,4 +31,5 @@ android {
 dependencies {
     implementation(project(":Bcore"))
     implementation(project(":cve"))
+    testImplementation("junit:junit:4.13.2")
 }
