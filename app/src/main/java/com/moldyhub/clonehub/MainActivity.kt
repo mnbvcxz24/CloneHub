@@ -35,6 +35,10 @@ class MainActivity : Activity() {
         VirtualAppInstanceStore(this)
     }
 
+    private val lifecycleController by lazy {
+        VirtualAppLifecycleController(instanceStore, UnavailableVirtualAppRuntime())
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -225,10 +229,23 @@ class MainActivity : Activity() {
             val app = getInstalledApp(appPackage) ?: return@forEach
             instanceStore.getForPackage(appPackage).forEach { instance ->
                 instanceCount++
-                instancesContainer.addView(instanceRow(app, instance) {
-                    instanceStore.remove(instance.instanceId)
-                    renderInstances()
-                }, rowLayoutParams())
+                instancesContainer.addView(
+                    instanceRow(
+                        app = app,
+                        instance = instance,
+                        onRemove = {
+                            instanceStore.remove(instance.instanceId)
+                            renderInstances()
+                        },
+                        onStart = {
+                            handleLifecycleResult(lifecycleController.start(instance.instanceId))
+                        },
+                        onStop = {
+                            handleLifecycleResult(lifecycleController.stop(instance.instanceId))
+                        }
+                    ),
+                    rowLayoutParams()
+                )
             }
         }
         if (instanceCount == 0) {
@@ -247,7 +264,9 @@ class MainActivity : Activity() {
     private fun instanceRow(
         app: InstalledApp,
         instance: com.moldyhub.clonehub.cve.VirtualAppInstance,
-        onRemove: () -> Unit
+        onRemove: () -> Unit,
+        onStart: () -> Unit,
+        onStop: () -> Unit
     ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -269,18 +288,52 @@ class MainActivity : Activity() {
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                 })
                 addView(TextView(this@MainActivity).apply {
-                    text = "${instance.state.name} • ID ${instance.instanceId.take(8)} • runtime integration pending"
+                    text = if (instance.state == com.moldyhub.clonehub.cve.InstanceState.FAILED) {
+                        "FAILED • runtime unavailable • ID ${instance.instanceId.take(8)}"
+                    } else {
+                        "${instance.state.name} • ID ${instance.instanceId.take(8)}"
+                    }
                     textSize = 11f
                     setTextColor(0xFF777783.toInt())
                 })
             }
             addView(details, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val lifecycleButton = Button(this@MainActivity).apply {
+                text = when (instance.state) {
+                    com.moldyhub.clonehub.cve.InstanceState.RUNNING -> "Stop"
+                    com.moldyhub.clonehub.cve.InstanceState.STARTING,
+                    com.moldyhub.clonehub.cve.InstanceState.STOPPING -> "Wait"
+                    else -> "Start"
+                }
+                isAllCaps = false
+                isEnabled = instance.state != com.moldyhub.clonehub.cve.InstanceState.STARTING &&
+                    instance.state != com.moldyhub.clonehub.cve.InstanceState.STOPPING
+                setOnClickListener {
+                    if (instance.state == com.moldyhub.clonehub.cve.InstanceState.RUNNING) onStop() else onStart()
+                }
+            }
+            addView(lifecycleButton)
             addView(Button(this@MainActivity).apply {
                 text = "Remove"
                 isAllCaps = false
                 setOnClickListener { onRemove() }
             })
         }
+    }
+
+    private fun handleLifecycleResult(result: InstanceLifecycleResult) {
+        when (result) {
+            is InstanceLifecycleResult.Running -> {
+                Toast.makeText(this, "Runtime started.", Toast.LENGTH_SHORT).show()
+            }
+            is InstanceLifecycleResult.Stopped -> {
+                Toast.makeText(this, "Runtime stopped.", Toast.LENGTH_SHORT).show()
+            }
+            is InstanceLifecycleResult.Failed -> {
+                Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
+            }
+        }
+        renderInstances()
     }
 
     private fun getInstalledApp(appPackage: String): InstalledApp? {
