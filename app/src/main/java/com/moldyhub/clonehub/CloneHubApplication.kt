@@ -7,7 +7,7 @@ class CloneHubApplication : Application() {
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
         DiagnosticsLogger.installCrashHandler(base)
-        BlackBoxRuntime.skipStartupForDiagnostics(base)
+        BlackBoxRuntime.attach(this, base)
     }
 
     override fun onCreate() {
