@@ -27,8 +27,8 @@ android {
     }
 }
 
-// Controlled diagnostic: include Bcore as a build dependency,
-// but keep BlackBoxRuntime as a no-op and do not initialize the engine.
+// Keep BlackBox inactive while integrating the clean-room CVE core.
 dependencies {
     implementation(project(":Bcore"))
+    implementation(project(":cve"))
 }
