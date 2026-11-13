@@ -5,7 +5,6 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
@@ -73,7 +72,7 @@ class MainActivity : Activity() {
         }
 
         importStatus = TextView(this).apply {
-            text = "If the device's document picker fails, try the alternate picker."
+            text = "Browse all files. CloneHub will check whether the selected file is a valid APK."
             textSize = 12f
             setTextColor(0xFF777783.toInt())
             setPadding(0, dp(4), 0, dp(8))
@@ -129,7 +128,9 @@ class MainActivity : Activity() {
 
         val intent = Intent(action).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = APK_MIME_TYPE
+            // Some cloud-phone file providers do not advertise APK MIME types.
+            // Browse all files and validate the selected file inside CloneHub.
+            type = "*/*"
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (requestCode == REQUEST_OPEN_DOCUMENT) {
                 addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
@@ -247,6 +248,12 @@ class MainActivity : Activity() {
             destination.delete()
             throw IllegalStateException("The selected file was empty.")
         }
+
+        val packageInfo = packageManager.getPackageArchiveInfo(destination.absolutePath, 0)
+        if (packageInfo == null) {
+            destination.delete()
+            throw IllegalArgumentException("That file is not a valid Android APK. Choose an .apk file.")
+        }
         return destination
     }
 
@@ -272,8 +279,8 @@ class MainActivity : Activity() {
     }
 
     private fun showPickerError() {
-        importStatus.text = "No compatible file picker was found. Install or enable a file manager."
-        Toast.makeText(this, "No compatible APK picker is available.", Toast.LENGTH_LONG).show()
+        importStatus.text = "Could not open a file picker. Try enabling a file manager on this device."
+        Toast.makeText(this, "No compatible file picker is available.", Toast.LENGTH_LONG).show()
     }
 
     private fun renderLibrary() {
@@ -382,7 +389,6 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_OPEN_DOCUMENT = 1001
         private const val REQUEST_GET_CONTENT = 1002
-        private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         private const val KEY_ENTRIES = "entries"
     }
 }
