@@ -199,19 +199,31 @@ class MainActivity : Activity() {
                 updated.remove(appPackage)
                 saveLibraryPackages(updated)
             } else {
-                val row = appRow(app, "Remove") {
-                    val updated = getLibraryPackages().toMutableSet()
-                    updated.remove(appPackage)
-                    saveLibraryPackages(updated)
-                    renderLibrary()
-                    renderInstalledApps()
-                }
+                val row = appRow(
+                    app = app,
+                    actionLabel = "Remove",
+                    onAction = {
+                        val updated = getLibraryPackages().toMutableSet()
+                        updated.remove(appPackage)
+                        saveLibraryPackages(updated)
+                        renderLibrary()
+                        renderInstalledApps()
+                    },
+                    secondaryActionLabel = "Open",
+                    onSecondaryAction = { launchInstalledApp(app) }
+                )
                 libraryContainer.addView(row, rowLayoutParams())
             }
         }
     }
 
-    private fun appRow(app: InstalledApp, actionLabel: String, onAction: () -> Unit): LinearLayout {
+    private fun appRow(
+        app: InstalledApp,
+        actionLabel: String,
+        onAction: () -> Unit,
+        secondaryActionLabel: String? = null,
+        onSecondaryAction: (() -> Unit)? = null
+    ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -252,7 +264,36 @@ class MainActivity : Activity() {
                 isEnabled = actionLabel != "Added"
                 setOnClickListener { onAction() }
             }
+            if (secondaryActionLabel != null && onSecondaryAction != null) {
+                val secondaryAction = Button(this@MainActivity).apply {
+                    text = secondaryActionLabel
+                    isAllCaps = false
+                    setOnClickListener { onSecondaryAction() }
+                }
+                addView(secondaryAction)
+            }
             addView(action)
+        }
+    }
+
+    private fun launchInstalledApp(app: InstalledApp) {
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(app.packageName)
+            if (launchIntent == null) {
+                Toast.makeText(this, "No launch activity found for ${app.label}.", Toast.LENGTH_SHORT).show()
+                DiagnosticsLogger.record(this, "No launch intent for ${app.packageName}")
+                return
+            }
+
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            DiagnosticsLogger.record(this, "Launching installed app ${app.packageName}")
+            startActivity(launchIntent)
+        } catch (error: Exception) {
+            DiagnosticsLogger.record(
+                this,
+                "Launch failed for ${app.packageName}: ${error.javaClass.name}: ${error.message}"
+            )
+            Toast.makeText(this, "Could not open ${app.label}.", Toast.LENGTH_LONG).show()
         }
     }
 
