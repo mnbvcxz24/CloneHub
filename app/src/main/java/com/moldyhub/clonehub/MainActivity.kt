@@ -28,7 +28,6 @@ class MainActivity : Activity() {
     private lateinit var libraryContainer: LinearLayout
     private lateinit var importStatus: TextView
     private lateinit var importButton: Button
-    private lateinit var alternateImportButton: Button
 
     private val importExecutor = Executors.newSingleThreadExecutor()
 
@@ -62,17 +61,11 @@ class MainActivity : Activity() {
         importButton = Button(this).apply {
             text = "Import APK"
             isAllCaps = false
-            setOnClickListener { openApkPicker(REQUEST_OPEN_DOCUMENT) }
-        }
-
-        alternateImportButton = Button(this).apply {
-            text = "Use alternate picker"
-            isAllCaps = false
-            setOnClickListener { openApkPicker(REQUEST_GET_CONTENT) }
+            setOnClickListener { openApkPicker() }
         }
 
         importStatus = TextView(this).apply {
-            text = "Browse all files. CloneHub will check whether the selected file is a valid APK."
+            text = "Select an APK document to import it into CloneHub."
             textSize = 12f
             setTextColor(0xFF777783.toInt())
             setPadding(0, dp(4), 0, dp(8))
@@ -103,7 +96,6 @@ class MainActivity : Activity() {
         root.addView(title)
         root.addView(subtitle)
         root.addView(importButton)
-        root.addView(alternateImportButton)
         root.addView(importStatus)
         root.addView(sectionTitle)
         root.addView(
@@ -119,51 +111,27 @@ class MainActivity : Activity() {
         renderLibrary()
     }
 
-    private fun openApkPicker(requestCode: Int) {
-        val action = if (requestCode == REQUEST_OPEN_DOCUMENT) {
-            Intent.ACTION_OPEN_DOCUMENT
-        } else {
-            Intent.ACTION_GET_CONTENT
-        }
-
-        val intent = Intent(action).apply {
+    private fun openApkPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            // Some cloud-phone file providers do not advertise APK MIME types.
-            // Browse all files and validate the selected file inside CloneHub.
-            type = "*/*"
+            type = APK_MIME_TYPE
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            if (requestCode == REQUEST_OPEN_DOCUMENT) {
-                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-            }
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
 
         try {
-            startActivityForResult(intent, requestCode)
+            startActivityForResult(intent, REQUEST_OPEN_DOCUMENT)
         } catch (_: ActivityNotFoundException) {
-            if (requestCode == REQUEST_OPEN_DOCUMENT) {
-                openApkPicker(REQUEST_GET_CONTENT)
-            } else {
-                showPickerError()
-            }
+            showPickerError()
         } catch (_: SecurityException) {
-            if (requestCode == REQUEST_OPEN_DOCUMENT) {
-                openApkPicker(REQUEST_GET_CONTENT)
-            } else {
-                showPickerError()
-            }
-        } catch (_: RuntimeException) {
-            if (requestCode == REQUEST_OPEN_DOCUMENT) {
-                openApkPicker(REQUEST_GET_CONTENT)
-            } else {
-                showPickerError()
-            }
+            showPickerError()
         }
     }
 
     @Deprecated("Uses request codes to support the existing project baseline.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_OPEN_DOCUMENT && requestCode != REQUEST_GET_CONTENT) return
+        if (requestCode != REQUEST_OPEN_DOCUMENT) return
         if (resultCode != RESULT_OK) return
 
         val uri = data?.data
@@ -200,7 +168,7 @@ class MainActivity : Activity() {
             } catch (error: Exception) {
                 runOnUiThread {
                     setImporting(false)
-                    importStatus.text = "Import failed. Try the alternate picker or another file provider."
+                    importStatus.text = "Import failed. Check that the document provider can access this APK."
                     Toast.makeText(
                         this,
                         error.message?.let { "Could not import APK: $it" } ?: "Could not import APK.",
@@ -213,7 +181,6 @@ class MainActivity : Activity() {
 
     private fun setImporting(importing: Boolean) {
         importButton.isEnabled = !importing
-        alternateImportButton.isEnabled = !importing
         importButton.text = if (importing) "Importing…" else "Import APK"
     }
 
@@ -279,8 +246,8 @@ class MainActivity : Activity() {
     }
 
     private fun showPickerError() {
-        importStatus.text = "Could not open a file picker. Try enabling a file manager on this device."
-        Toast.makeText(this, "No compatible file picker is available.", Toast.LENGTH_LONG).show()
+        importStatus.text = "Could not open the document picker. Make sure a file provider is available."
+        Toast.makeText(this, "Unable to open Open Document.", Toast.LENGTH_LONG).show()
     }
 
     private fun renderLibrary() {
@@ -388,7 +355,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_OPEN_DOCUMENT = 1001
-        private const val REQUEST_GET_CONTENT = 1002
+        private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         private const val KEY_ENTRIES = "entries"
     }
 }
