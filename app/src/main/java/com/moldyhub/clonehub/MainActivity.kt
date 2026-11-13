@@ -347,4 +347,8 @@ class MainActivity : Activity() {
         val label: String,
         val icon: android.graphics.drawable.Drawable
     )
+
+    companion object {
+        private const val KEY_LIBRARY_PACKAGES = "library_packages"
+    }
 }
