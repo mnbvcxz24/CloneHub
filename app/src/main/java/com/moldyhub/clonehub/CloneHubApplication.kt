@@ -7,11 +7,11 @@ class CloneHubApplication : Application() {
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
         DiagnosticsLogger.installCrashHandler(base)
-        BlackBoxRuntime.attach(this, base)
+        BlackBoxRuntime.skipStartupForDiagnostics(base)
     }
 
     override fun onCreate() {
         super.onCreate()
-        BlackBoxRuntime.create(this)
+        DiagnosticsLogger.record(this, "DIAGNOSTIC TEST: BlackBox doCreate skipped")
     }
 }
