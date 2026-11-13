@@ -23,6 +23,22 @@ class VirtualAppInstanceStore(context: Context) {
         readAll().filter { it.packageName == packageName }
 
     @Synchronized
+    fun getById(instanceId: String): VirtualAppInstance? =
+        readAll().firstOrNull { it.instanceId == instanceId }
+
+    @Synchronized
+    fun update(instance: VirtualAppInstance): VirtualAppInstance {
+        val current = readAll()
+        check(current.any { it.instanceId == instance.instanceId }) {
+            "Instance not found: ${instance.instanceId}"
+        }
+        writeAll(current.map {
+            if (it.instanceId == instance.instanceId) instance else it
+        })
+        return instance
+    }
+
+    @Synchronized
     fun create(packageName: String, displayName: String): VirtualAppInstance {
         val directoryName = "instance_${java.util.UUID.randomUUID()}"
         val instance = VirtualAppInstance.create(
