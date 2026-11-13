@@ -27,6 +27,8 @@ android {
     }
 }
 
-// Diagnostic build: deliberately excludes BlackBox and uses Android's default Application.
+// Controlled diagnostic: include Bcore as a build dependency,
+// but keep BlackBoxRuntime as a no-op and do not initialize the engine.
 dependencies {
+    implementation(project(":Bcore"))
 }
