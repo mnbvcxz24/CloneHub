@@ -4,7 +4,9 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
@@ -37,6 +39,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DiagnosticsLogger.installCrashHandler(this)
+        DiagnosticsLogger.record(
+            this,
+            "onCreate; SDK=${Build.VERSION.SDK_INT}; device=${Build.MANUFACTURER} ${Build.MODEL}; app=$packageName"
+        )
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -69,6 +76,12 @@ class MainActivity : Activity() {
             textSize = 12f
             setTextColor(0xFF777783.toInt())
             setPadding(0, dp(4), 0, dp(8))
+        }
+
+        val diagnosticsButton = Button(this).apply {
+            text = "Save diagnostics file"
+            isAllCaps = false
+            setOnClickListener { exportDiagnostics() }
         }
 
         val nextStepCard = TextView(this).apply {
@@ -105,6 +118,7 @@ class MainActivity : Activity() {
         root.addView(subtitle)
         root.addView(importButton)
         root.addView(importStatus)
+        root.addView(diagnosticsButton)
         root.addView(
             nextStepCard,
             LinearLayout.LayoutParams(
@@ -127,24 +141,69 @@ class MainActivity : Activity() {
     }
 
     private fun openApkPicker() {
+        DiagnosticsLogger.record(this, "Import APK tapped")
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             addCategory(Intent.CATEGORY_OPENABLE)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
+        val resolvedActivity = packageManager.resolveActivity(intent, 0)?.activityInfo
+        DiagnosticsLogger.record(
+            this,
+            "Picker intent prepared; action=${intent.action}; type=${intent.type}; " +
+                "resolved=${resolvedActivity?.packageName}/${resolvedActivity?.name ?: "none"}"
+        )
+
         try {
+            DiagnosticsLogger.record(this, "Calling startActivityForResult for file picker")
             startActivityForResult(intent, REQUEST_GET_CONTENT)
-        } catch (_: ActivityNotFoundException) {
-            showPickerError()
-        } catch (_: SecurityException) {
-            showPickerError()
+            DiagnosticsLogger.record(this, "startActivityForResult returned without throwing")
+        } catch (error: Exception) {
+            DiagnosticsLogger.record(
+                this,
+                "Picker launch exception: ${error.javaClass.name}: ${error.message}"
+            )
+            Log.e("CloneHubDiagnostics", "Unable to launch file picker", error)
+            showPickerError(error)
+        }
+    }
+
+    private fun exportDiagnostics() {
+        try {
+            DiagnosticsLogger.record(this, "User requested diagnostics export")
+            val uri = DiagnosticsLogger.exportToDownloads(this)
+            if (uri != null) {
+                Toast.makeText(
+                    this,
+                    "Saved to Downloads/CloneHub/clonehub-diagnostics.txt",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                Toast.makeText(this, "Could not save diagnostics file.", Toast.LENGTH_LONG).show()
+            }
+        } catch (error: Exception) {
+            DiagnosticsLogger.record(
+                this,
+                "Diagnostics export failed: ${error.javaClass.name}: ${error.message}"
+            )
+            Log.e("CloneHubDiagnostics", "Unable to export diagnostics", error)
+            Toast.makeText(
+                this,
+                "Diagnostics export failed: ${error.message}",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
     @Deprecated("Uses request codes to support the existing project baseline.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        DiagnosticsLogger.record(
+            this,
+            "onActivityResult; requestCode=$requestCode; resultCode=$resultCode; " +
+                "uriScheme=${data?.data?.scheme}; uriAuthority=${data?.data?.authority}"
+        )
         if (requestCode != REQUEST_GET_CONTENT) return
         if (resultCode != RESULT_OK) return
 
@@ -180,6 +239,11 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "APK added to library", Toast.LENGTH_SHORT).show()
                 }
             } catch (error: Exception) {
+                DiagnosticsLogger.record(
+                    this,
+                    "APK import failed: ${error.javaClass.name}: ${error.message}"
+                )
+                Log.e("CloneHubDiagnostics", "APK import failed", error)
                 runOnUiThread {
                     setImporting(false)
                     importStatus.text = "Import failed. Check that the document provider can access this APK."
@@ -259,9 +323,17 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showPickerError() {
+    private fun showPickerError(error: Exception) {
+        DiagnosticsLogger.record(
+            this,
+            "Showing picker error: ${error.javaClass.name}: ${error.message}"
+        )
         importStatus.text = "Could not open the file picker. Make sure Files by Google is available."
-        Toast.makeText(this, "Unable to open the APK picker.", Toast.LENGTH_LONG).show()
+        Toast.makeText(
+            this,
+            "Unable to open picker (${error.javaClass.simpleName}).",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun renderLibrary() {
@@ -356,7 +428,26 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
+    override fun onResume() {
+        super.onResume()
+        DiagnosticsLogger.record(this, "Activity onResume")
+    }
+
+    override fun onPause() {
+        DiagnosticsLogger.record(this, "Activity onPause")
+        super.onPause()
+    }
+
+    override fun onStop() {
+        DiagnosticsLogger.record(this, "Activity onStop")
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        DiagnosticsLogger.record(
+            this,
+            "Activity onDestroy; changingConfigurations=$isChangingConfigurations"
+        )
         super.onDestroy()
         importExecutor.shutdown()
     }
