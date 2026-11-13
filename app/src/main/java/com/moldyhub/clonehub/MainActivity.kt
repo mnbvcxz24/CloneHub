@@ -159,16 +159,20 @@ class MainActivity : Activity() {
 
         apps.forEach { app ->
             val alreadyAdded = getLibraryPackages().contains(app.packageName)
-            val row = appRow(app, if (alreadyAdded) "Added" else "Add") {
-                if (!alreadyAdded) {
-                    val packages = getLibraryPackages().toMutableSet()
-                    packages.add(app.packageName)
-                    saveLibraryPackages(packages)
-                    renderLibrary()
-                    renderInstalledApps()
-                    Toast.makeText(this, "${app.label} added to CloneHub", Toast.LENGTH_SHORT).show()
+            val row = appRow(
+                app = app,
+                actionLabel = if (alreadyAdded) "Added" else "Add",
+                onAction = {
+                    if (!alreadyAdded) {
+                        val packages = getLibraryPackages().toMutableSet()
+                        packages.add(app.packageName)
+                        saveLibraryPackages(packages)
+                        renderLibrary()
+                        renderInstalledApps()
+                        Toast.makeText(this, "${app.label} added to CloneHub", Toast.LENGTH_SHORT).show()
+                    }
                 }
-            }
+            )
             installedContainer.addView(row, rowLayoutParams())
         }
     }
