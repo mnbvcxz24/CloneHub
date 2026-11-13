@@ -71,6 +71,14 @@ class MainActivity : Activity() {
             setPadding(0, dp(4), 0, dp(8))
         }
 
+        val nextStepCard = TextView(this).apply {
+            text = "NEXT MILESTONE\nAPK inspection\nShow each imported app’s icon, package name, and version before we build the isolated runtime."
+            textSize = 13f
+            setTextColor(0xFF555560.toInt())
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setBackgroundColor(0xFFEAEAF1.toInt())
+        }
+
         val sectionTitle = TextView(this).apply {
             text = "Imported apps"
             textSize = 18f
@@ -97,6 +105,13 @@ class MainActivity : Activity() {
         root.addView(subtitle)
         root.addView(importButton)
         root.addView(importStatus)
+        root.addView(
+            nextStepCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+        )
         root.addView(sectionTitle)
         root.addView(
             scrollView,
@@ -112,15 +127,14 @@ class MainActivity : Activity() {
     }
 
     private fun openApkPicker() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = APK_MIME_TYPE
+            addCategory(Intent.CATEGORY_OPENABLE)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
 
         try {
-            startActivityForResult(intent, REQUEST_OPEN_DOCUMENT)
+            startActivityForResult(intent, REQUEST_GET_CONTENT)
         } catch (_: ActivityNotFoundException) {
             showPickerError()
         } catch (_: SecurityException) {
@@ -131,7 +145,7 @@ class MainActivity : Activity() {
     @Deprecated("Uses request codes to support the existing project baseline.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_OPEN_DOCUMENT) return
+        if (requestCode != REQUEST_GET_CONTENT) return
         if (resultCode != RESULT_OK) return
 
         val uri = data?.data
@@ -246,8 +260,8 @@ class MainActivity : Activity() {
     }
 
     private fun showPickerError() {
-        importStatus.text = "Could not open the document picker. Make sure a file provider is available."
-        Toast.makeText(this, "Unable to open Open Document.", Toast.LENGTH_LONG).show()
+        importStatus.text = "Could not open the file picker. Make sure Files by Google is available."
+        Toast.makeText(this, "Unable to open the APK picker.", Toast.LENGTH_LONG).show()
     }
 
     private fun renderLibrary() {
@@ -354,7 +368,7 @@ class MainActivity : Activity() {
     )
 
     companion object {
-        private const val REQUEST_OPEN_DOCUMENT = 1001
+        private const val REQUEST_GET_CONTENT = 1001
         private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         private const val KEY_ENTRIES = "entries"
     }
