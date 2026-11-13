@@ -44,7 +44,7 @@ sealed class InstanceLifecycleResult {
  * RUNNING is persisted only after the backend reports success.
  */
 class VirtualAppLifecycleController(
-    private val store: VirtualAppInstanceStore,
+    private val store: VirtualAppInstanceRepository,
     private val runtime: VirtualAppRuntime
 ) {
     @Synchronized
