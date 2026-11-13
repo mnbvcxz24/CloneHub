@@ -13,7 +13,7 @@ import java.io.File
  * The private directory created here belongs to CloneHub; it is not target-app
  * storage and does not provide app or process isolation.
  */
-class VirtualAppInstanceStore(context: Context) {
+class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
     private val preferences = context.getSharedPreferences("clonehub_instances", Context.MODE_PRIVATE)
     private val legacyPreferences = context.getSharedPreferences("clonehub_library", Context.MODE_PRIVATE)
     private val rootDirectory = File(context.filesDir, "instances")
@@ -23,11 +23,11 @@ class VirtualAppInstanceStore(context: Context) {
         readAll().filter { it.packageName == packageName }
 
     @Synchronized
-    fun getById(instanceId: String): VirtualAppInstance? =
+    override fun getById(instanceId: String): VirtualAppInstance? =
         readAll().firstOrNull { it.instanceId == instanceId }
 
     @Synchronized
-    fun update(instance: VirtualAppInstance): VirtualAppInstance {
+    override fun update(instance: VirtualAppInstance): VirtualAppInstance {
         val current = readAll()
         check(current.any { it.instanceId == instance.instanceId }) {
             "Instance not found: ${instance.instanceId}"
