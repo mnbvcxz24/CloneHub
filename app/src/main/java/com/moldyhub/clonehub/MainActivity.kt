@@ -26,6 +26,7 @@ import android.widget.Toast
 class MainActivity : Activity() {
 
     private lateinit var libraryContainer: LinearLayout
+    private lateinit var instancesContainer: LinearLayout
     private lateinit var installedContainer: LinearLayout
 
     private val preferences by lazy {
@@ -71,6 +72,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
         }
 
+        val instancesTitle = sectionTitle("Instances")
+        instancesContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
         val installedTitle = sectionTitle("Installed apps")
         installedContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -80,6 +86,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             addView(libraryTitle)
             addView(libraryContainer)
+            addView(instancesTitle)
+            addView(instancesContainer)
             addView(installedTitle)
             addView(installedContainer)
         }
@@ -108,6 +116,7 @@ class MainActivity : Activity() {
 
         setContentView(root)
         renderLibrary()
+        renderInstances()
         renderInstalledApps()
     }
 
@@ -210,16 +219,107 @@ class MainActivity : Activity() {
                         val updated = getLibraryPackages().toMutableSet()
                         updated.remove(appPackage)
                         saveLibraryPackages(updated)
+                        saveInstanceLabels(appPackage, emptySet())
                         renderLibrary()
+                        renderInstances()
                         renderInstalledApps()
                     },
-                    secondaryActionLabel = "Open",
-                    onSecondaryAction = { launchInstalledApp(app) }
+                    secondaryActionLabel = "Add instance",
+                    onSecondaryAction = { addInstance(app) }
                 )
                 libraryContainer.addView(row, rowLayoutParams())
             }
         }
     }
+
+    private fun renderInstances() {
+        instancesContainer.removeAllViews()
+        var instanceCount = 0
+        getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }.forEach { appPackage ->
+            val app = getInstalledApp(appPackage) ?: return@forEach
+            getInstanceLabels(appPackage).sortedBy { it.substringAfterLast(" ").toIntOrNull() ?: 0 }.forEach { instanceLabel ->
+                instanceCount++
+                instancesContainer.addView(instanceRow(app, instanceLabel) {
+                    val labels = getInstanceLabels(appPackage).toMutableSet()
+                    labels.remove(instanceLabel)
+                    saveInstanceLabels(appPackage, labels)
+                    renderInstances()
+                }, rowLayoutParams())
+            }
+        }
+        if (instanceCount == 0) {
+            instancesContainer.addView(emptyMessage("No instances created yet. Add an instance from an app in My library."))
+        }
+    }
+
+    private fun addInstance(app: InstalledApp) {
+        val labels = getInstanceLabels(app.packageName).toMutableSet()
+        var nextNumber = 1
+        while (labels.contains("Instance $nextNumber")) nextNumber++
+        val instanceLabel = "Instance $nextNumber"
+        labels.add(instanceLabel)
+        saveInstanceLabels(app.packageName, labels)
+        DiagnosticsLogger.record(this, "Created instance profile $instanceLabel for ${app.packageName}; runtime not connected")
+        renderInstances()
+        Toast.makeText(this, "$instanceLabel added. Virtual runtime is not connected yet.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun instanceRow(app: InstalledApp, instanceLabel: String, onRemove: () -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(8), dp(10))
+            setBackgroundColor(0xFFFFFFFF.toInt())
+            val iconView = ImageView(this@MainActivity).apply {
+                setImageDrawable(app.icon)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            addView(iconView, LinearLayout.LayoutParams(dp(42), dp(42)))
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, dp(6), 0)
+                addView(TextView(this@MainActivity).apply {
+                    text = "${app.label} • $instanceLabel"
+                    textSize = 14f
+                    setTextColor(0xFF202027.toInt())
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = "Profile only • isolated runtime not available"
+                    textSize = 11f
+                    setTextColor(0xFF777783.toInt())
+                })
+            }
+            addView(details, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Button(this@MainActivity).apply {
+                text = "Remove"
+                isAllCaps = false
+                setOnClickListener { onRemove() }
+            })
+        }
+    }
+
+    private fun getInstalledApp(appPackage: String): InstalledApp? {
+        return try {
+            val info = packageManager.getApplicationInfo(appPackage, 0)
+            InstalledApp(
+                packageName = appPackage,
+                label = packageManager.getApplicationLabel(info).toString(),
+                icon = packageManager.getApplicationIcon(info)
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun getInstanceLabels(appPackage: String): Set<String> =
+        preferences.getStringSet(instancePreferenceKey(appPackage), emptySet())?.toSet() ?: emptySet()
+
+    private fun saveInstanceLabels(appPackage: String, labels: Set<String>) {
+        preferences.edit().putStringSet(instancePreferenceKey(appPackage), labels).apply()
+    }
+
+    private fun instancePreferenceKey(appPackage: String) = "instances_$appPackage"
 
     private fun appRow(
         app: InstalledApp,
@@ -363,8 +463,9 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         DiagnosticsLogger.record(this, "Activity onResume")
-        if (::libraryContainer.isInitialized && ::installedContainer.isInitialized) {
+        if (::libraryContainer.isInitialized && ::instancesContainer.isInitialized && ::installedContainer.isInitialized) {
             renderLibrary()
+            renderInstances()
             renderInstalledApps()
         }
     }
