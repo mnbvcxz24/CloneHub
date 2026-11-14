@@ -8,7 +8,8 @@ package com.moldyhub.clonehub.cve
  */
 data class VirtualAppConfiguration(
     val displayName: String? = null,
-    val dataDirectoryName: String? = null
+    val dataDirectoryName: String? = null,
+    val apkSetVersionCode: Long? = null
 ) {
     init {
         require(displayName == null || displayName.isNotBlank()) {
