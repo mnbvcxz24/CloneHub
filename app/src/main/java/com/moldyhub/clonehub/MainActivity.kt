@@ -339,11 +339,36 @@ class MainActivity : Activity() {
     }
 
     private fun addInstance(app: InstalledApp) {
-        val existing = instanceStore.getForPackage(app.packageName).size
-        val instanceName = "Instance ${existing + 1}"
-        val instance = instanceStore.create(app.packageName, instanceName)
-        renderInstances()
-        Toast.makeText(this, "${instance.configuration.displayName} created and saved.", Toast.LENGTH_SHORT).show()
+        workerStatusText.text = "Preparing APK set before creating an instance..."
+        Thread {
+            val preparation = ApkSetPreparer(this).prepare(app.packageName)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when (preparation) {
+                    is ApkPreparationResult.Success -> {
+                        val existing = instanceStore.getForPackage(app.packageName).size
+                        val instanceName = "Instance ${existing + 1}"
+                        val instance = instanceStore.create(
+                            app.packageName,
+                            instanceName,
+                            preparation.apkSet.versionCode
+                        )
+                        workerStatusText.text =
+                            "INSTANCE READY • APK version ${preparation.apkSet.versionCode} • ${preparation.apkSet.apkFiles.size} APK file(s) prepared"
+                        renderInstances()
+                        Toast.makeText(
+                            this,
+                            "${instance.configuration.displayName} created with its prepared APK set.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    is ApkPreparationResult.Failure -> {
+                        workerStatusText.text = "INSTANCE CREATION FAILED • ${preparation.reason}"
+                        Toast.makeText(this, preparation.reason, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }.start()
     }
 
     private fun instanceRow(
