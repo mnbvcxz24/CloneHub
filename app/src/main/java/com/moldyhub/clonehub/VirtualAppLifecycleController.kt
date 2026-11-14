@@ -13,7 +13,7 @@ sealed class RuntimeOperationResult {
     data class Failure(val reason: String) : RuntimeOperationResult()
 }
 
-class UnavailableVirtualAppRuntime : InstanceRuntimeBackend {
+class UnavailableVirtualAppRuntime : VirtualAppRuntime {
     override fun start(instance: VirtualAppInstance) = RuntimeOperationResult.Failure(
         "The CloneHub Virtualization Engine runtime is not connected yet."
     )

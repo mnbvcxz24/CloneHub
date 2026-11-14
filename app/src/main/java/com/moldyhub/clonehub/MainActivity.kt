@@ -169,7 +169,7 @@ class MainActivity : Activity() {
         }
         header.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(TextView(this).apply {
-            text = "ALPHA 26"
+            text = "ALPHA 27"
             textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(196, 188, 255))
