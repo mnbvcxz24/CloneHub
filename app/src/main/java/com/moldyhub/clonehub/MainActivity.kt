@@ -43,6 +43,9 @@ class MainActivity : Activity() {
     }
 
     private val instanceStore by lazy { VirtualAppInstanceStore(this) }
+    private val runtimePreferences by lazy {
+        getSharedPreferences("clonehub_runtime_instances", MODE_PRIVATE)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -167,7 +170,7 @@ class MainActivity : Activity() {
         }
         header.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(TextView(this).apply {
-            text = "ALPHA 20"
+            text = "ALPHA 21"
             textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(196, 188, 255))
@@ -280,7 +283,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(3))
         })
         workerStatusText = TextView(this).apply {
-            text = "Not tested yet. This checks the helper process only, not Roblox execution."
+            text = "BlackBox: ${BlackBoxRuntime.statusText()}. Runtime smoke testing is separate from the isolated helper process; this fork does not claim game compatibility."
             textSize = 12f
             setTextColor(MUTED)
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -433,6 +436,12 @@ class MainActivity : Activity() {
     ): View {
         val card = horizontalCard()
         card.addView(appIcon(app), LinearLayout.LayoutParams(dp(44), dp(44)))
+        val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
+        val runtimeStatus = when {
+            !BlackBoxRuntime.initialized -> BlackBoxRuntime.statusText()
+            userId > 0 -> "Installed in virtual user #$userId"
+            else -> "Prepared profile • not installed in runtime"
+        }
         val details = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(11), 0, dp(5), 0)
@@ -443,25 +452,140 @@ class MainActivity : Activity() {
                 setTextColor(Color.WHITE)
             })
             addView(TextView(this@MainActivity).apply {
-                text = "PREPARED PROFILE  •  ID ${instance.instanceId.take(8)}"
+                text = "PROFILE  •  ID ${instance.instanceId.take(8)}"
                 textSize = 9f
                 letterSpacing = 0.03f
                 setTextColor(Color.rgb(175, 164, 255))
                 setPadding(0, dp(4), 0, 0)
             })
             addView(TextView(this@MainActivity).apply {
-                text = "App execution backend not connected"
+                text = runtimeStatus
                 textSize = 10f
                 setTextColor(MUTED)
                 setPadding(0, dp(3), 0, 0)
             })
         }
         card.addView(details, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        card.addView(smallButton("Remove", false) {
-            instanceStore.remove(instance.instanceId)
-            refreshDashboard()
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        val actionLabel = if (userId > 0) "Launch" else "Install"
+        actions.addView(smallButton(actionLabel, true) {
+            if (userId > 0) launchRuntimeInstance(instance)
+            else installRuntimeInstance(instance)
         })
+        actions.addView(smallButton("Remove", false) {
+            removeRuntimeInstance(instance)
+        }, margins(top = 4))
+        card.addView(actions)
         return card
+    }
+
+    private fun runtimeUserKey(instanceId: String) = "user_$instanceId"
+
+    private fun installRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
+        if (!BlackBoxRuntime.initialized) {
+            Toast.makeText(this, BlackBoxRuntime.statusText(), Toast.LENGTH_LONG).show()
+            return
+        }
+        val appInfo = try {
+            packageManager.getApplicationInfo(instance.packageName, 0)
+        } catch (_: Exception) {
+            Toast.makeText(this, "The selected app is no longer installed.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!appInfo.splitSourceDirs.isNullOrEmpty()) {
+            Toast.makeText(
+                this,
+                "This runtime test currently supports single-APK apps only. Split APK installation is not connected yet.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        workerStatusText.text = "Installing ${instance.packageName} into a BlackBox virtual user..."
+        Thread {
+            var userId = -1
+            try {
+                userId = BlackBoxRuntime.allocateUserId(this)
+                BlackBoxRuntime.installApp(instance.packageName, userId)
+                check(runtimePreferences.edit()
+                    .putInt(runtimeUserKey(instance.instanceId), userId)
+                    .commit()) { "Could not save the virtual user mapping." }
+                DiagnosticsLogger.record(
+                    this,
+                    "BlackBox virtual install succeeded: package=${instance.packageName}, instance=${instance.instanceId}, userId=$userId"
+                )
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    workerStatusText.text = "VIRTUAL INSTALL COMPLETE • ${instance.packageName} • user $userId. Launch is the next smoke test."
+                    refreshDashboard()
+                    Toast.makeText(this, "Installed into virtual user #$userId.", Toast.LENGTH_LONG).show()
+                }
+            } catch (error: Throwable) {
+                if (userId > 0) runCatching { BlackBoxRuntime.deleteUser(userId) }
+                val message = error.message ?: error.javaClass.simpleName
+                DiagnosticsLogger.record(this, "BlackBox virtual install failed: ${error.javaClass.name}: $message")
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    workerStatusText.text = "VIRTUAL INSTALL FAILED • $message"
+                    Toast.makeText(this, "Virtual install failed: $message", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun launchRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
+        if (!BlackBoxRuntime.initialized) {
+            Toast.makeText(this, BlackBoxRuntime.statusText(), Toast.LENGTH_LONG).show()
+            return
+        }
+        val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
+        if (userId <= 0) {
+            installRuntimeInstance(instance)
+            return
+        }
+        try {
+            val launched = BlackBoxRuntime.launchApp(instance.packageName, userId)
+            if (launched) {
+                workerStatusText.text = "VIRTUAL LAUNCH REQUEST SENT • ${instance.packageName} • user $userId"
+                DiagnosticsLogger.record(this, "BlackBox launch accepted: package=${instance.packageName}, userId=$userId")
+            } else {
+                Toast.makeText(this, "BlackBox could not start this app instance.", Toast.LENGTH_LONG).show()
+            }
+        } catch (error: Throwable) {
+            val message = error.message ?: error.javaClass.simpleName
+            DiagnosticsLogger.record(this, "BlackBox virtual launch failed: ${error.javaClass.name}: $message")
+            Toast.makeText(this, "Virtual launch failed: $message", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun removeRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
+        val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
+        if (userId > 0 && !BlackBoxRuntime.initialized) {
+            Toast.makeText(this, "Runtime is unavailable; restore the runtime before removing this installed instance.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                if (userId > 0) BlackBoxRuntime.deleteUser(userId)
+                runtimePreferences.edit().remove(runtimeUserKey(instance.instanceId)).commit()
+                instanceStore.remove(instance.instanceId)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    refreshDashboard()
+                    Toast.makeText(this, "Instance removed.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Throwable) {
+                val message = error.message ?: error.javaClass.simpleName
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(this, "Could not remove instance: $message", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }.start()
     }
 
     private fun horizontalCard(): LinearLayout {

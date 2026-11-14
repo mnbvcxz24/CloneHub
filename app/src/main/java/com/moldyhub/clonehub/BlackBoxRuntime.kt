@@ -31,6 +31,8 @@ internal object BlackBoxRuntime {
     }
 
     fun attach(application: Application, base: Context) {
+        initialized = false
+        initializationError = null
         try {
             val core = BlackBoxCore.get()
             core.closeCodeInit()
@@ -53,11 +55,14 @@ internal object BlackBoxRuntime {
     }
 
     fun create(context: Context) {
+        if (initializationError != null) return
         try {
-            BlackBoxCore.get().doCreate()
+            val core = BlackBoxCore.get()
+            core.doCreate()
+            check(core.areServicesAvailable()) { "BlackBox system services are unavailable" }
             initialized = true
             initializationError = null
-            DiagnosticsLogger.record(context, "BlackBox core initialization completed")
+            DiagnosticsLogger.record(context, "BlackBox core initialization completed and services responded")
         } catch (error: Throwable) {
             initializationError = error.message ?: error.javaClass.simpleName
             DiagnosticsLogger.record(
