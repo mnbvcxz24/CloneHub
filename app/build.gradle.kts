@@ -11,7 +11,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.nextvm.app"
+        applicationId = "com.moldyhub.clonehub"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
