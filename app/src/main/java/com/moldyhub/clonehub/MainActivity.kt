@@ -333,7 +333,7 @@ class MainActivity : Activity() {
             return
         }
         apps.forEach { app ->
-            installedContainer.addView(appCard(app, "Add to library") {
+            installedContainer.addView(appCard(app, "Add to library", {
                 val packages = getLibraryPackages().toMutableSet()
                 packages.add(app.packageName)
                 saveLibraryPackages(packages)
@@ -360,11 +360,13 @@ class MainActivity : Activity() {
             } else {
                 val count = instanceStore.getForPackage(appPackage).size
                 libraryContainer.addView(
-                    appCard(app, "Add instance  •  ${count}/3") {
-                        addInstance(app)
-                    }, showPrepare = true) {
-                        prepareLibraryApp(appPackage)
-                    },
+                    appCard(
+                        app,
+                        "Add instance  •  ${count}/3",
+                        { addInstance(app) },
+                        showPrepare = true,
+                        onPrepare = { prepareLibraryApp(appPackage) }
+                    ),
                     cardMargins()
                 )
             }
