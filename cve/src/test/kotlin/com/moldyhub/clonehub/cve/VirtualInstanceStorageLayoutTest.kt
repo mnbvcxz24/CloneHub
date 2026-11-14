@@ -68,7 +68,7 @@ class VirtualInstanceStorageLayoutTest {
             val invalid = VirtualAppInstance.create(
                 "com.example.demo",
                 VirtualAppConfiguration(dataDirectoryName = "instance_safe")
-            ).copy(configuration = VirtualAppConfiguration(dataDirectoryName = ".."))
+            ).copy(configuration = VirtualAppConfiguration(dataDirectoryName = "instance unsafe"))
             try {
                 layout.pathsFor(invalid)
                 throw AssertionError("Expected unsafe directory name to be rejected")
