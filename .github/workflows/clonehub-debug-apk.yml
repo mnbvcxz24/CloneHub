@@ -61,14 +61,13 @@ jobs:
         working-directory: third_party/VirtualApp
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon assembleDebug :shell:assembleDebug
+          ./gradlew --no-daemon :app:assembleDebug
 
-      - name: Upload CloneHub debug APK
+      - name: Upload CloneHub single-app debug APK
         uses: actions/upload-artifact@v4
         with:
           name: CloneHub-debug-apk
           path: |
               third_party/VirtualApp/app/build/outputs/apk/debug/*.apk
-              third_party/VirtualApp/shell/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
