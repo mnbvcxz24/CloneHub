@@ -1,218 +1,217 @@
-# Contributing to NEXTVM
+# Contributing to CloneHub
 
-Thank you for your interest in contributing to NEXTVM! This project aims to build the most capable Android virtual environment engine, and every contribution matters.
+Thanks for helping improve CloneHub. Contributions can include code, testing, device compatibility reports, documentation, and clear bug reproductions.
+
+This guide explains how to prepare a change and what information helps maintainers review it.
 
 ## Table of Contents
 
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
-- [Project Architecture](#project-architecture)
+- [Understanding the Project](#understanding-the-project)
 - [Making Changes](#making-changes)
 - [Code Style](#code-style)
 - [Submitting a Pull Request](#submitting-a-pull-request)
-- [Areas Where Help is Needed](#areas-where-help-is-needed)
+- [Areas to Improve](#areas-to-improve)
 - [Reporting Issues](#reporting-issues)
 
 ---
 
 ## Getting Started
 
-1. **Fork** the repository on GitHub
-2. **Clone** your fork locally:
+1. Fork the [CloneHub repository](https://github.com/mnbvcxz24/CloneHub).
+2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/NEXTVM.git
-   cd NEXTVM
+   git clone https://github.com/YOUR_USERNAME/CloneHub.git
+   cd CloneHub
    ```
-3. **Create a branch** for your changes:
+3. Create a branch for your work:
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout -b feature/short-description
    ```
+
+For small fixes, keep the change focused. If a proposal changes runtime architecture or adds a new interception layer, open an issue first so the approach can be discussed before substantial work begins.
 
 ## Development Setup
 
 ### Prerequisites
 
-| Tool | Version | Required |
-|------|---------|----------|
-| Android Studio | Ladybug 2024.2.1+ | Yes |
-| JDK | 17 | Yes |
-| Android SDK | API 35 | Yes |
-| NDK | 27.1.12297006 | For native hook module |
-| CMake | 3.22+ | For native hook module |
+| Tool | Version / requirement |
+|------|------------------------|
+| JDK | 17 |
+| Android SDK | API 35 |
+| Android NDK | 27.1.12297006 |
+| CMake | 3.22+ for native components |
+| Android Studio | A version compatible with the project's Gradle and Android Gradle Plugin |
 
-### Build Steps
+### Build commands
 
 ```bash
-# Build the project
+# Compile the debug application
 ./gradlew :app:assembleDebug
 
-# Run lint checks
+# Run available lint tasks
 ./gradlew lint
 
-# Build all modules
+# Build the configured project
 ./gradlew build
 ```
 
-### Testing on Device
+Use a physical Android device for meaningful virtualization testing. Emulator behavior may differ from a physical device, and a successful build does not confirm that a guest app will run correctly.
 
-NEXTVM requires a real Android device for proper testing (API 26+). The virtualization engine relies on system-level features that don't work correctly in the Android Emulator.
+### Before opening a change
 
-## Project Architecture
+- Start from the latest `main` branch.
+- Check existing issues and pull requests for related work.
+- Keep credentials, signing keys, private APKs, and user data out of commits.
+- Record the Android version and device details used for testing.
 
-NEXTVM is a 15-module Gradle project following Clean Architecture principles:
+## Understanding the Project
 
-```
-app/                    Entry point, Hilt DI, stub components
+CloneHub is organized into the host application, core runtime modules, and feature modules.
+
+```text
+app/                    Host app, dependency injection, guest entry points
 core/
-  virtualization/       VM engine, process management (START HERE)
-  hook/                 Native (C++) and Java hooking engine
-  binder/               Binder proxy interception layer
-  sandbox/              File system isolation
-  services/             Virtual system services, GMS integration
-  framework/            Android framework parsing
-  apk/                  APK parsing and class loading
-  model/                Data models
-  common/               Shared utilities
-  designsystem/         Material 3 theme
+  virtualization/       Guest startup, process and lifecycle handling
+  binder/               Binder and system-service routing
+  sandbox/              Guest context and data separation
+  hook/                 Native interception support
+  apk/                  APK inspection and class-loading support
+  framework/            Android framework integration
+  model/                Shared runtime models
+  services/             Virtual service components
+  common/               Shared helpers
+  designsystem/         Shared UI components and theme
 feature/
-  launcher/             App grid UI
-  appmanager/           APK install/uninstall
-  settings/             Engine configuration
-  filemanager/          Virtual file browser
+  launcher/             Guest app home screen
+  appmanager/           Guest APK installation and management
+  settings/             Runtime and application settings
+  filemanager/          Sandbox file browsing
 ```
 
-### Key Files to Understand First
+### Suggested reading order
 
-If you're new to the codebase, read these files in order:
+If you're new to the codebase, trace one guest launch from the host UI into the runtime before changing lower-level hooks:
 
-1. `core/model/VirtualApp.kt` — The core data model
-2. `core/model/ProcessSlot.kt` — How process slots work
-3. `core/virtualization/engine/VirtualEngine.kt` — The main engine
-4. `core/virtualization/engine/ActivityThreadHook.kt` — How Activity launches are intercepted
-5. `core/binder/proxy/ActivityManagerProxy.kt` — How system calls are redirected
-6. `core/sandbox/VirtualContext.kt` — How file I/O is sandboxed
-7. `core/hook/src/main/cpp/native-hook.cpp` — The C++ native hook engine
+1. `core/model/` — understand the data representing a virtual app and process.
+2. `core/virtualization/` — follow initialization and guest lifecycle handling.
+3. `core/binder/` — see how selected system calls are routed.
+4. `core/sandbox/` — understand the guest context and storage layout.
+5. `core/hook/` — review native interception when your change requires it.
+6. `feature/` and `app/` — follow the user-facing flow and host integration.
+
+The implementation is the source of truth. Update this guide when module responsibilities or important entry points change.
 
 ## Making Changes
 
-### Before You Start
+### General guidelines
 
-- Check the [Issues](https://github.com/TanvirHossain2/NEXTVM/issues) page for existing discussions
-- For large changes, open an issue first to discuss the approach
-- Make sure your change aligns with the project's goals (no-root virtualization)
+- Keep changes scoped to one issue or feature.
+- Prefer existing project patterns and dependencies over adding new frameworks.
+- Handle failures explicitly; guest startup has multiple stages and should not silently discard useful errors.
+- Avoid complex work inside native hook callbacks. Keep hook code safe against recursion and unexpected calls.
+- Do not assume behavior observed in one guest app applies to every app.
+- Add or update tests when practical, especially for parsing, path handling, and state transitions.
+- Update documentation when a change affects setup, user-visible behavior, or architecture.
 
-### Code Guidelines
+### What to avoid
 
-- **Kotlin** for all new Android code
-- **C++** for native hooks (in `core/hook/src/main/cpp/`)
-- Follow existing code patterns in the module you're modifying
-- Keep methods focused — one method, one responsibility
-- Add Timber logging for important operations: `Timber.d("VirtualEngine: launching %s", packageName)`
-
-### What NOT to Do
-
-- Don't add features that require root access
-- Don't include proprietary/copyrighted SDKs
-- Don't add tracking, analytics, or telemetry
-- Don't commit IDE-specific files (`.idea/`, `*.iml`)
-- Don't commit API keys, tokens, or credentials
+- Do not add root requirements unless the project direction is explicitly changed.
+- Do not add undisclosed tracking or telemetry.
+- Do not commit secrets, tokens, signing credentials, or personal app data.
+- Do not claim support for an app or Android version without testing it.
+- Do not present upstream documentation or feature claims as CloneHub capabilities unless they have been verified in this codebase.
 
 ## Code Style
 
-- **Kotlin**: Follow [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html)
-- **C++**: Follow Android NDK conventions with consistent naming
-- **Indentation**: 4 spaces (no tabs)
-- **Line length**: 120 characters max
-- **Naming**:
-  - Classes: `PascalCase` (e.g., `VirtualEngine`)
-  - Functions: `camelCase` (e.g., `installApp`)
-  - Constants: `SCREAMING_SNAKE_CASE` (e.g., `MAX_PROCESS_SLOTS`)
-  - Private fields: `camelCase` with underscore prefix for backing fields
+- **Kotlin:** follow the formatting and Kotlin conventions used in the module.
+- **C++:** keep native code consistent with surrounding NDK code and use clear ownership and error handling.
+- **Naming:** use descriptive names that match existing package and module conventions.
+- **Logging:** include enough context to diagnose failures, but never log passwords, tokens, or private user content.
+- **Comments:** explain non-obvious Android behavior and constraints rather than restating the code.
+
+Before submitting, review the diff and remove unrelated formatting changes.
 
 ## Submitting a Pull Request
 
-1. **Ensure your code compiles** without errors
-2. **Update documentation** if your change affects public APIs or architecture
-3. **Write a clear PR description**:
-   - What does this change do?
-   - Why is this change needed?
-   - How was it tested?
-4. **Keep PRs focused** — one feature or fix per PR
-5. **Reference related issues** using `Fixes #123` or `Relates to #456`
+1. Make sure the project builds with the relevant Gradle task.
+2. Run applicable lint or tests.
+3. Test runtime changes on a physical device where possible.
+4. Update the README or relevant guide if behavior or setup has changed.
+5. Open a pull request with a concise description of the problem and solution.
 
-### PR Template
+### Pull request details
 
-```markdown
-## What Changed
-Brief description of the changes.
+Please include:
 
-## Why
-Explanation of why this change is needed.
+- **Summary:** what changed?
+- **Reason:** what problem does it solve?
+- **Testing:** which build tasks, tests, devices, and Android versions were used?
+- **Compatibility impact:** could this affect other guest apps or Android versions?
+- **Screenshots or logs:** include them when useful, after removing private information.
 
-## Testing
-How this was tested (device, API level, specific apps tested).
+Keep pull requests reviewable. Discuss large architectural changes before implementation.
 
-## Screenshots (if UI changes)
-Before/After screenshots.
-```
+## Areas to Improve
 
-## Areas Where Help is Needed
+The following are broad areas where contributions may be useful. They are suggestions, not claims that a feature is already supported.
 
-### Good First Issues
+### Runtime reliability
 
-- Writing unit tests (currently at 0% coverage)
-- Adding KDoc comments to public APIs
-- Improving error messages and user-facing strings
-- UI animations and transitions in feature modules
+- Improve guest startup diagnostics and failure reporting.
+- Make lifecycle and process cleanup more predictable.
+- Investigate compatibility differences across Android releases.
 
-### Intermediate
+### Sandbox behavior
 
-- System service proxy implementations (Camera, Storage/SAF, DownloadManager)
-- WebView process virtual context support
-- Clipboard, alarm, job scheduler persistence across VM restarts
-- Performance profiling and optimization
+- Improve coverage for files, preferences, databases, and external-storage paths.
+- Add tests for path mapping and per-instance separation.
+- Document cases where Android services still use host identity or host permissions.
 
-### Advanced
+### App compatibility
 
-- Native hook engine improvements (migrating to [bhook](https://github.com/nicklhw/bhook))
-- Multi-process ClassLoader isolation for stable app hosting
-- App compatibility fixes for specific frameworks (Flutter, React Native, Unity)
-- Play Integrity / SafetyNet bypass improvements
-- Memory management optimization for multiple running instances
+- Reproduce and document failures for individual guest apps.
+- Investigate WebView, native libraries, multi-process apps, and service dependencies.
+- Separate confirmed fixes from workarounds that only help one app.
 
-### Research
+### User experience and documentation
 
-- Investigating ARM64 hooking libraries for broader native function interception
-- Android 15/16 compatibility analysis for new security restrictions
-- GMS integration improvements for Google Sign-In flow
+- Improve guest management and error messages.
+- Make diagnostic information easier to collect and understand.
+- Keep setup instructions and feature descriptions aligned with the current code.
 
 ## Reporting Issues
 
-When reporting a bug, include:
+Choose the issue type that best matches the problem and provide enough detail for someone else to reproduce it.
 
-- **Device**: Model, Android version, RAM
-- **App being virtualized**: Package name and version
-- **Steps to reproduce**: Numbered steps
-- **Expected behavior**: What should happen
-- **Actual behavior**: What actually happens
-- **Logs**: Logcat output filtered to `com.nextvm` (if possible)
+For a runtime or compatibility report, include:
 
-### Issue Labels
+- **Device:** manufacturer and model.
+- **Android version:** include the API level if known.
+- **CloneHub version:** release or commit being tested.
+- **Guest app:** app name, package name, and version.
+- **Steps to reproduce:** list the actions in order.
+- **Expected result:** what you thought would happen.
+- **Actual result:** what happened instead, including whether the guest process closed or returned to the host.
+- **Diagnostics:** relevant CloneHub logs, with personal information removed.
 
-| Label | Description |
-|-------|-------------|
-| `bug` | Something isn't working |
-| `enhancement` | New feature or improvement |
-| `good-first-issue` | Good for newcomers |
-| `help-wanted` | Extra attention needed |
-| `compatibility` | App compatibility issue |
-| `native` | Related to C++/NDK code |
-| `proxy` | Related to Binder proxy layer |
+Do not upload private APKs, account data, authentication tokens, or logs containing sensitive information.
+
+### Issue categories
+
+| Category | Use it for |
+|----------|------------|
+| Bug | A reproducible problem in CloneHub |
+| Compatibility | A guest app or Android-version-specific issue |
+| Enhancement | An improvement to existing behavior |
+| Feature request | A proposed new capability |
+| Documentation | Incorrect, missing, or confusing project guidance |
 
 ---
 
 ## Questions?
 
-If you have questions about the codebase or contribution process, open a [Discussion](https://github.com/TanvirHossain2/NEXTVM/discussions) on GitHub.
+If you're unsure where a change belongs, open an issue with a short explanation of the problem and the modules you think may be involved. It's better to agree on the direction early than to spend time on a change that conflicts with the runtime design.
 
-Thank you for contributing to NEXTVM!
+Thanks for helping make CloneHub more reliable.
