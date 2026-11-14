@@ -214,12 +214,12 @@ class MainActivity : Activity() {
                     val report = result.report
                     workerStatusText.text = buildString {
                         append("APK SCANNED IN ISOLATED WORKER")
-                        append("\\nPackage: ${result.packageName}")
-                        append("\\nWorker PID: ${result.workerPid} • UID: ${result.workerUid}")
-                        append("\\nBytes: ${report.bytesRead} • ZIP entries: ${report.entryCount}")
-                        append("\\nManifest: ${if (report.hasManifest) "found" else "not found"} • DEX files: ${report.dexFileCount}")
-                        append("\\nNative ABIs: ${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
-                        append("\\nSHA-256: ${report.sha256}")
+                        append("\nPackage: ${result.packageName}")
+                        append("\nWorker PID: ${result.workerPid} • UID: ${result.workerUid}")
+                        append("\nBytes: ${report.bytesRead} • ZIP entries: ${report.entryCount}")
+                        append("\nManifest: ${if (report.hasManifest) "found" else "not found"} • DEX files: ${report.dexFileCount}")
+                        append("\nNative ABIs: ${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
+                        append("\nSHA-256: ${report.sha256}")
                     }
                     Toast.makeText(this, "APK archive inspected by isolated worker.", Toast.LENGTH_LONG).show()
                 }
