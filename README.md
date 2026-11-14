@@ -1,29 +1,28 @@
 # CloneHub
 
-CloneHub now uses the upstream [ISEKHON/VirtualApp](https://github.com/ISEKHON/VirtualApp) Android virtualization application as its codebase.
-
-The previous experimental CloneHub implementation has been removed. This repository no longer contains a separate custom cloning engine or GitHub Actions workflows.
+CloneHub uses the [mnbvcxz24/VirtualApp](https://github.com/mnbvcxz24/VirtualApp) Android virtualization project as its codebase.
 
 ## Open the Android project
 
-The upstream project is included as a Git submodule at `third_party/VirtualApp`.
+The VirtualApp source is included as a Git submodule at `third_party/VirtualApp`.
 
-After cloning this repository, initialize the submodule:
+After cloning this repository, initialize and update the submodule to the latest `main` revision:
 
 ```bash
-git submodule update --init --recursive
+git submodule update --init --remote --recursive
 ```
 
-Then open **`third_party/VirtualApp`** directly in Android Studio. Use the Gradle wrapper included by the upstream project.
+Then open **`third_party/VirtualApp`** directly in Android Studio and use the Gradle wrapper included by that project.
+
+## Single-app installation
+
+The Gradle build includes the CloneHub host app and its virtualization library. The separate shell application module is no longer included in the build, so you install and open CloneHub only. Clone apps from the CloneHub home screen and launch them there; a separate shell APK is not required.
 
 ## Upstream project
 
-- Source: https://github.com/ISEKHON/VirtualApp
-- Pinned revision: `b3c634ad7941765df3da84a207aca94b7861afae`
+- Source: https://github.com/mnbvcxz24/VirtualApp
 - License: Apache-2.0 (see the upstream `LICENSE` file)
 
 ## Important
 
-VirtualApp is an actively developed and explicitly unstable project. Expect compatibility limitations and possible crashes. This repository adopts the upstream project as-is; it does not claim that the app has been built or verified on every device.
-
-Changes to the upstream engine should be made in the upstream submodule or in a deliberate fork, while preserving its license and attribution.
+VirtualApp is an actively developed and explicitly unstable project. Android 15 (API 35) compatibility has not yet been established, and some apps may fail to initialize in the virtual environment. This repository does not claim that the app has been built or verified on every device.
