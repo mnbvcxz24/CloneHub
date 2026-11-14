@@ -2,6 +2,7 @@ package com.moldyhub.clonehub
 
 import android.app.Service
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -10,7 +11,7 @@ import android.os.Message
 import android.os.Messenger
 import android.os.Process
 
-/** Isolated CVE worker used for process-boundary diagnostics only. */
+/** Isolated CVE worker used for process-boundary and device-capability diagnostics only. */
 class CveWorkerService : Service() {
     private val messenger by lazy { Messenger(WorkerHandler()) }
 
@@ -30,6 +31,11 @@ class CveWorkerService : Service() {
                 arg2 = Process.myUid()
                 data = Bundle().apply {
                     putInt(CveWorkerProtocol.KEY_PROCESS_ID, Process.myPid())
+                    putInt(CveWorkerProtocol.KEY_DEVICE_SDK, Build.VERSION.SDK_INT)
+                    putStringArray(
+                        CveWorkerProtocol.KEY_SUPPORTED_ABIS,
+                        Build.SUPPORTED_ABIS
+                    )
                 }
             }
             runCatching { replyTo?.send(response) }
