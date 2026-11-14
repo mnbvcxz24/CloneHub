@@ -55,14 +55,8 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Compile NewBlackbox engine modules (not linked to host APK)
-        run: gradle --no-daemon :Bcore:assembleDebug
-
-      - name: Run CloneHub lifecycle unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest
-
-      - name: Build CloneHub debug APK
-        run: gradle --no-daemon :app:assembleDebug
+      - name: Run CloneHub lifecycle unit tests and build NewBlackbox-linked debug APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

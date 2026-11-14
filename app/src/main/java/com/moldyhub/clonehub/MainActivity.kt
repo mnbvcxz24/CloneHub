@@ -170,7 +170,7 @@ class MainActivity : Activity() {
         }
         header.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(TextView(this).apply {
-            text = "ALPHA 22"
+            text = "ALPHA 24"
             textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(196, 188, 255))
@@ -283,7 +283,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(3))
         })
         workerStatusText = TextView(this).apply {
-            text = "SAFE MODE • BlackBox auto-start is disabled after the Alpha21 startup crash. The dashboard and APK preparation remain available; runtime testing is paused."
+            text = "NewBlackbox is linked but stays dormant until you install an instance. Tap Install to initialize the engine on demand."
             textSize = 12f
             setTextColor(MUTED)
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -438,7 +438,7 @@ class MainActivity : Activity() {
         card.addView(appIcon(app), LinearLayout.LayoutParams(dp(44), dp(44)))
         val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
         val runtimeStatus = when {
-            !BlackBoxRuntime.initialized -> "Runtime disabled in safe mode"
+            !NewBlackboxRuntime.initialized -> "NewBlackbox not initialized"
             userId > 0 -> "Installed in virtual user #$userId"
             else -> "Prepared profile • not installed in runtime"
         }
@@ -485,9 +485,17 @@ class MainActivity : Activity() {
     private fun runtimeUserKey(instanceId: String) = "user_$instanceId"
 
     private fun installRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
-        if (!BlackBoxRuntime.initialized) {
-            Toast.makeText(this, BlackBoxRuntime.statusText(), Toast.LENGTH_LONG).show()
-            return
+        if (!NewBlackboxRuntime.initialized) {
+            workerStatusText.text = "INITIALIZING NEWBLACKBOX • first-use setup..."
+            try {
+                NewBlackboxRuntime.initialize(applicationContext)
+            } catch (error: Throwable) {
+                val message = error.message ?: error.javaClass.simpleName
+                workerStatusText.text = "NEWBLACKBOX INITIALIZATION FAILED • $message"
+                DiagnosticsLogger.record(this, "NewBlackbox initialization failed: ${error.javaClass.name}: $message")
+                Toast.makeText(this, "NewBlackbox initialization failed: $message", Toast.LENGTH_LONG).show()
+                return
+            }
         }
         val appInfo = try {
             packageManager.getApplicationInfo(instance.packageName, 0)
@@ -504,18 +512,18 @@ class MainActivity : Activity() {
             return
         }
 
-        workerStatusText.text = "Installing ${instance.packageName} into a BlackBox virtual user..."
+        workerStatusText.text = "Installing ${instance.packageName} into a NewBlackbox virtual user..."
         Thread {
             var userId = -1
             try {
-                userId = BlackBoxRuntime.allocateUserId(this)
-                BlackBoxRuntime.installApp(instance.packageName, userId)
+                userId = NewBlackboxRuntime.allocateUserId(this)
+                NewBlackboxRuntime.installApp(instance.packageName, userId)
                 check(runtimePreferences.edit()
                     .putInt(runtimeUserKey(instance.instanceId), userId)
                     .commit()) { "Could not save the virtual user mapping." }
                 DiagnosticsLogger.record(
                     this,
-                    "BlackBox virtual install succeeded: package=${instance.packageName}, instance=${instance.instanceId}, userId=$userId"
+                    "NewBlackbox virtual install succeeded: package=${instance.packageName}, instance=${instance.instanceId}, userId=$userId"
                 )
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
@@ -524,9 +532,9 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "Installed into virtual user #$userId.", Toast.LENGTH_LONG).show()
                 }
             } catch (error: Throwable) {
-                if (userId > 0) runCatching { BlackBoxRuntime.deleteUser(userId) }
+                if (userId > 0) runCatching { NewBlackboxRuntime.deleteUser(userId) }
                 val message = error.message ?: error.javaClass.simpleName
-                DiagnosticsLogger.record(this, "BlackBox virtual install failed: ${error.javaClass.name}: $message")
+                DiagnosticsLogger.record(this, "NewBlackbox virtual install failed: ${error.javaClass.name}: $message")
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     workerStatusText.text = "VIRTUAL INSTALL FAILED • $message"
@@ -537,9 +545,17 @@ class MainActivity : Activity() {
     }
 
     private fun launchRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
-        if (!BlackBoxRuntime.initialized) {
-            Toast.makeText(this, BlackBoxRuntime.statusText(), Toast.LENGTH_LONG).show()
-            return
+        if (!NewBlackboxRuntime.initialized) {
+            try {
+                workerStatusText.text = "INITIALIZING NEWBLACKBOX..."
+                NewBlackboxRuntime.initialize(applicationContext)
+            } catch (error: Throwable) {
+                val message = error.message ?: error.javaClass.simpleName
+                workerStatusText.text = "NEWBLACKBOX INITIALIZATION FAILED • $message"
+                DiagnosticsLogger.record(this, "NewBlackbox initialization failed: ${error.javaClass.name}: $message")
+                Toast.makeText(this, "NewBlackbox initialization failed: $message", Toast.LENGTH_LONG).show()
+                return
+            }
         }
         val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
         if (userId <= 0) {
@@ -547,29 +563,34 @@ class MainActivity : Activity() {
             return
         }
         try {
-            val launched = BlackBoxRuntime.launchApp(instance.packageName, userId)
+            val launched = NewBlackboxRuntime.launchApp(instance.packageName, userId)
             if (launched) {
                 workerStatusText.text = "VIRTUAL LAUNCH REQUEST SENT • ${instance.packageName} • user $userId"
-                DiagnosticsLogger.record(this, "BlackBox launch accepted: package=${instance.packageName}, userId=$userId")
+                DiagnosticsLogger.record(this, "NewBlackbox launch accepted: package=${instance.packageName}, userId=$userId")
             } else {
-                Toast.makeText(this, "BlackBox could not start this app instance.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "NewBlackbox could not start this app instance.", Toast.LENGTH_LONG).show()
             }
         } catch (error: Throwable) {
             val message = error.message ?: error.javaClass.simpleName
-            DiagnosticsLogger.record(this, "BlackBox virtual launch failed: ${error.javaClass.name}: $message")
+            DiagnosticsLogger.record(this, "NewBlackbox virtual launch failed: ${error.javaClass.name}: $message")
             Toast.makeText(this, "Virtual launch failed: $message", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun removeRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
         val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
-        if (userId > 0 && !BlackBoxRuntime.initialized) {
-            Toast.makeText(this, "Runtime is unavailable; restore the runtime before removing this installed instance.", Toast.LENGTH_LONG).show()
-            return
+        if (userId > 0 && !NewBlackboxRuntime.initialized) {
+            try {
+                NewBlackboxRuntime.initialize(applicationContext)
+            } catch (error: Throwable) {
+                val message = error.message ?: error.javaClass.simpleName
+                Toast.makeText(this, "NewBlackbox initialization failed: $message", Toast.LENGTH_LONG).show()
+                return
+            }
         }
         Thread {
             try {
-                if (userId > 0) BlackBoxRuntime.deleteUser(userId)
+                if (userId > 0) NewBlackboxRuntime.deleteUser(userId)
                 runtimePreferences.edit().remove(runtimeUserKey(instance.instanceId)).commit()
                 instanceStore.remove(instance.instanceId)
                 runOnUiThread {
