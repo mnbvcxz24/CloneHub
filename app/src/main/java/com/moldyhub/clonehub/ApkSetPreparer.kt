@@ -122,11 +122,25 @@ class ApkSetPreparer(context: Context) {
 
                 val inspection = inspect(copiedFiles)
                     ?: error("APK validation failed: one or more files are not valid APK containers.")
+                val manifest = (ApkManifestInspector.inspect(appContext.packageManager, copiedFiles.first())
+                    as? ApkManifestInspectionResult.Success)?.report
+                    ?: error("Android could not read the copied base APK manifest.")
+                check(manifest.packageName == packageName) {
+                    "The copied APK manifest package does not match the selected app."
+                }
+                check(manifest.versionCode == versionCode) {
+                    "The copied APK manifest version does not match the selected app."
+                }
                 val totalBytes = copiedFiles.sumOf { it.length() }
                 val metadata = JSONObject()
                     .put("packageName", packageName)
                     .put("versionCode", versionCode)
                     .put("versionName", packageInfo.versionName ?: "")
+                    .put("manifestMinSdk", manifest.minSdkVersion)
+                    .put("manifestTargetSdk", manifest.targetSdkVersion)
+                    .put("manifestApplicationClass", manifest.applicationClassName ?: "")
+                    .put("manifestActivities", JSONArray().apply { manifest.declaredActivities.forEach { put(it) } })
+                    .put("manifestExportedActivities", JSONArray().apply { manifest.exportedActivities.forEach { put(it) } })
                     .put("splitNames", JSONArray().apply { splitNames.forEach { put(it) } })
                     .put("apkCount", copiedFiles.size)
                     .put("totalBytes", totalBytes)
