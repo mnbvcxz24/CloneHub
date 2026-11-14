@@ -229,23 +229,23 @@ class MainActivity : Activity() {
                 workerInspectButton.text = "Inspect library app APK"
                 workerStatusText.text = buildString {
                     append("APK SET SCANNED IN ISOLATED WORKER")
-                    append("\nPackage: \${descriptor.packageName}")
-                    append("\nAPK parts inspected: \${reports.size} (base + \${(reports.size - 1).coerceAtLeast(0)} splits)")
+                    append("\nPackage: ${descriptor.packageName}")
+                    append("\nAPK parts inspected: ${reports.size} (base + ${(reports.size - 1).coerceAtLeast(0)} splits)")
                     reports.forEachIndexed { partIndex, (partName, report) ->
-                        append("\n\n\${if (partIndex == 0) "BASE APK" else "SPLIT APK $partIndex"}: $partName")
-                        append("\nBytes: \${report.bytesRead} • ZIP entries: \${report.entryCount}")
-                        append("\nManifest: \${if (report.hasManifest) "found" else "not found"} • DEX files: \${report.dexFileCount}")
-                        append("\nNative ABIs: \${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
-                        append("\nSHA-256: \${report.sha256}")
+                        append("\n\n${if (partIndex == 0) "BASE APK" else "SPLIT APK $partIndex"}: $partName")
+                        append("\nBytes: ${report.bytesRead} • ZIP entries: ${report.entryCount}")
+                        append("\nManifest: ${if (report.hasManifest) "found" else "not found"} • DEX files: ${report.dexFileCount}")
+                        append("\nNative ABIs: ${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
+                        append("\nSHA-256: ${report.sha256}")
                     }
                     append("\n\nAll APK parts were inspected separately; this is archive validation, not app execution.")
                 }
-                Toast.makeText(this, "All \${reports.size} APK parts inspected.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "All ${reports.size} APK parts inspected.", Toast.LENGTH_LONG).show()
                 return
             }
 
-            workerInspectButton.text = "Inspecting \${index + 1}/\${apkPaths.size}..."
-            workerStatusText.text = "Scanning APK part \${index + 1} of \${apkPaths.size} in the isolated worker..."
+            workerInspectButton.text = "Inspecting ${index + 1}/${apkPaths.size}..."
+            workerStatusText.text = "Scanning APK part ${index + 1} of ${apkPaths.size} in the isolated worker..."
             client.inspect(appPackage, apkPaths[index]) { result ->
                 if (isFinishing || isDestroyed) return@inspect
                 when (result) {
@@ -257,8 +257,8 @@ class MainActivity : Activity() {
                     is CveApkInspectionClient.Result.Failed -> {
                         workerInspectButton.isEnabled = true
                         workerInspectButton.text = "Inspect library app APK"
-                        workerStatusText.text = "APK PART \${index + 1}/\${apkPaths.size} FAILED • \${result.reason}"
-                        Toast.makeText(this, "Could not inspect APK part \${index + 1}: \${result.reason}", Toast.LENGTH_LONG).show()
+                        workerStatusText.text = "APK PART ${index + 1}/${apkPaths.size} FAILED • ${result.reason}"
+                        Toast.makeText(this, "Could not inspect APK part ${index + 1}: ${result.reason}", Toast.LENGTH_LONG).show()
                     }
                 }
             }
