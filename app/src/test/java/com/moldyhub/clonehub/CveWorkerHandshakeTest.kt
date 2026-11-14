@@ -6,41 +6,51 @@ import org.junit.Test
 
 class CveWorkerHandshakeTest {
     @Test
-    fun acceptsCurrentProtocolAndDistinctUid() {
+    fun acceptsVerifiedIsolatedWorkerWithSupportedDeviceCapabilities() {
         val handshake = CveWorkerHandshake(
             protocolVersion = CveWorkerProtocol.VERSION,
             processId = 1234,
-            workerUid = 99001
+            workerUid = 99001,
+            deviceSdkInt = 35,
+            supportedAbis = listOf("arm64-v8a")
         )
         assertTrue(handshake.isIsolatedFrom(10123))
     }
 
     @Test
-    fun rejectsHostUid() {
+    fun rejectsWorkerThatSharesHostUid() {
         val handshake = CveWorkerHandshake(
             protocolVersion = CveWorkerProtocol.VERSION,
             processId = 1234,
-            workerUid = 10123
+            workerUid = 10123,
+            deviceSdkInt = 35,
+            supportedAbis = listOf("arm64-v8a")
         )
         assertFalse(handshake.isIsolatedFrom(10123))
     }
 
     @Test
-    fun rejectsUnsupportedProtocol() {
-        val handshake = CveWorkerHandshake(
-            protocolVersion = CveWorkerProtocol.VERSION + 1,
+    fun rejectsMissingOrUnsupportedCapabilities() {
+        val noAbi = CveWorkerHandshake(
+            protocolVersion = CveWorkerProtocol.VERSION,
             processId = 1234,
-            workerUid = 99001
+            workerUid = 99001,
+            deviceSdkInt = 35,
+            supportedAbis = emptyList()
         )
-        assertFalse(handshake.isIsolatedFrom(10123))
+        val oldAndroid = noAbi.copy(deviceSdkInt = 28, supportedAbis = listOf("arm64-v8a"))
+        assertFalse(noAbi.isIsolatedFrom(10123))
+        assertFalse(oldAndroid.isIsolatedFrom(10123))
     }
 
     @Test
-    fun rejectsInvalidProcessId() {
+    fun rejectsUnknownProtocolVersion() {
         val handshake = CveWorkerHandshake(
-            protocolVersion = CveWorkerProtocol.VERSION,
-            processId = -1,
-            workerUid = 99001
+            protocolVersion = 1,
+            processId = 1234,
+            workerUid = 99001,
+            deviceSdkInt = 35,
+            supportedAbis = listOf("arm64-v8a")
         )
         assertFalse(handshake.isIsolatedFrom(10123))
     }
