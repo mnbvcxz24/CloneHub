@@ -11,8 +11,8 @@ android {
         applicationId = "com.moldyhub.clonehub"
         minSdk = 29
         targetSdk = 28
-        versionCode = 10
-        versionName = "0.1.0-alpha10"
+        versionCode = 11
+        versionName = "0.1.0-alpha11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
