@@ -185,9 +185,13 @@ class ApkSetPreparer(context: Context) {
         (ApkArchiveInspector.inspect(files, Build.SUPPORTED_ABIS.toList()) as? ApkInspectionResult.Success)?.inspection
 
     private fun isComplete(directory: File, expectedNames: List<String>): Boolean {
-        if (!directory.isDirectory || !File(directory, "apk-set.json").isFile) return false
+        val metadataFile = File(directory, "apk-set.json")
+        if (!directory.isDirectory || !metadataFile.isFile) return false
         val files = expectedNames.map { File(directory, it) }
-        return expectedNames.all { name ->
+        val hasManifestMetadata = runCatching {
+            JSONObject(metadataFile.readText()).has("manifestMinSdk")
+        }.getOrDefault(false)
+        return hasManifestMetadata && expectedNames.all { name ->
             File(directory, name).let { it.isFile && it.length() > 0L }
         } && inspect(files) != null
     }
