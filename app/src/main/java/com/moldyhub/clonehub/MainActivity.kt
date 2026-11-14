@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.io.File
 
 /**
  * CloneHub V1 installed-app library.
@@ -39,7 +40,8 @@ class MainActivity : Activity() {
     }
 
     private val lifecycleController by lazy {
-        VirtualAppLifecycleController(instanceStore, UnavailableVirtualAppRuntime())
+        val apkRoot = File(filesDir, "prepared_apks")
+        VirtualAppLifecycleController(instanceStore, PreparedApkSetRuntime(ApkSetResolver(apkRoot)))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -103,3 +103,26 @@ class VirtualAppLifecycleController(
     private fun missingInstance(instanceId: String) =
         InstanceLifecycleResult.Failed(null, "Instance $instanceId was not found.")
 }
+
+
+/**
+ * Performs a safe APK-set preflight before lifecycle startup.
+ * This is not an app execution backend: it validates the prepared snapshot
+ * and reports that actual virtual execution is still unavailable.
+ */
+class PreparedApkSetRuntime(
+    private val resolver: ApkSetResolver
+) : VirtualAppRuntime {
+    override fun start(instance: VirtualAppInstance): RuntimeOperationResult =
+        when (val result = resolver.resolve(instance)) {
+            is ApkSetResolution.Success -> RuntimeOperationResult.Failure(
+                "APK set verified (" + result.apkSet.apkFiles.size + " APK file(s)), but the virtual app execution backend is not implemented yet."
+            )
+            is ApkSetResolution.Failure -> RuntimeOperationResult.Failure(result.reason)
+        }
+
+    override fun stop(instance: VirtualAppInstance): RuntimeOperationResult =
+        RuntimeOperationResult.Failure(
+            "No virtual app process is running because the execution backend is not connected."
+        )
+}
