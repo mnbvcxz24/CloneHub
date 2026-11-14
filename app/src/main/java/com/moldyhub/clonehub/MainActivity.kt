@@ -520,7 +520,9 @@ class MainActivity : Activity() {
                 when (result) {
                     is ApkPreparationResult.Success -> {
                         val set = result.apkSet
-                        workerStatusText.text = "APK SET READY • ${set.apkFiles.size} file(s) • version ${set.versionCode}. This is preparation, not execution."
+                        val abiSummary = set.inspection.nativeAbis.joinToString().ifBlank { "no native libraries" }
+                        val compatibility = if (set.inspection.deviceAbiCompatible) "ABI compatible" else "ABI INCOMPATIBLE"
+                        workerStatusText.text = "APK VALIDATED • ${set.apkFiles.size} file(s) • version ${set.versionCode} • SHA-256 recorded • ${compatibility} • native ABI: ${abiSummary}. This is preflight only; guest execution is not implemented yet."
                         Toast.makeText(this, "APK set prepared.", Toast.LENGTH_LONG).show()
                     }
                     is ApkPreparationResult.Failure -> {
@@ -551,7 +553,10 @@ class MainActivity : Activity() {
                             "Instance $next",
                             preparation.apkSet.versionCode
                         )
-                        workerStatusText.text = "PROFILE PREPARED • ${preparation.apkSet.apkFiles.size} APK file(s) • version ${preparation.apkSet.versionCode}. Runtime execution is still pending."
+                        val prepared = preparation.apkSet
+                        val abiSummary = prepared.inspection.nativeAbis.joinToString().ifBlank { "no native libraries" }
+                        val compatibility = if (prepared.inspection.deviceAbiCompatible) "ABI compatible" else "ABI INCOMPATIBLE"
+                        workerStatusText.text = "PROFILE + APK PREFLIGHT READY • ${prepared.apkFiles.size} APK file(s) • ${compatibility} • native ABI: ${abiSummary}. Runtime execution is still pending."
                         refreshDashboard()
                         Toast.makeText(this, "${instance.configuration.displayName} profile created.", Toast.LENGTH_LONG).show()
                     }

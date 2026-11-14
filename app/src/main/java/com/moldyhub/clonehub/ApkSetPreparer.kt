@@ -17,7 +17,8 @@ data class PreparedApkSet(
     val versionCode: Long,
     val directory: File,
     val apkFiles: List<File>,
-    val totalBytes: Long
+    val totalBytes: Long,
+    val inspection: ApkSetInspection
 )
 
 sealed class ApkPreparationResult {
@@ -26,9 +27,9 @@ sealed class ApkPreparationResult {
 }
 
 /**
- * Copies only the installed app's base APK and PackageManager-declared split APKs.
- * It never opens app data, expands ZIP entries, parses DEX, or reads app databases.
- * One package-level APK set is shared by all instances; per-instance copies are unnecessary.
+ * Copies Android's installed base/split APK set, then validates each ZIP/APK container,
+ * records SHA-256 digests and checks native ABI compatibility. It never reads app data,
+ * extracts APK entries, parses DEX, or claims to launch the target app.
  */
 class ApkSetPreparer(context: Context) {
     private val appContext = context.applicationContext
@@ -57,9 +58,17 @@ class ApkSetPreparer(context: Context) {
                 appContext.packageManager.getPackageInfo(packageName, 0)
             }
 
+            val splitNames = packageInfo.splitNames?.toList().orEmpty()
+            val splitPaths = appInfo.splitSourceDirs?.filter { it.isNotBlank() }.orEmpty()
+            if (splitNames.size != splitPaths.size) {
+                return ApkPreparationResult.Failure(
+                    "Android returned inconsistent split metadata: ${splitNames.size} split name(s), ${splitPaths.size} split file(s)."
+                )
+            }
+
             val sourcePaths = buildList {
                 appInfo.sourceDir?.takeIf { it.isNotBlank() }?.let(::add)
-                appInfo.splitSourceDirs?.filter { it.isNotBlank() }?.let(::addAll)
+                addAll(splitPaths)
             }.distinct()
             if (sourcePaths.isEmpty()) {
                 return ApkPreparationResult.Failure("Android did not provide an installed base APK path.")
@@ -80,8 +89,10 @@ class ApkSetPreparer(context: Context) {
 
             if (isComplete(targetDirectory, targetNames)) {
                 val files = targetNames.map { File(targetDirectory, it) }
+                val inspection = inspect(files)
+                    ?: return ApkPreparationResult.Failure("The previously prepared APK set failed integrity validation. Prepare it again.")
                 return ApkPreparationResult.Success(
-                    PreparedApkSet(packageName, versionCode, targetDirectory, files, files.sumOf { it.length() }),
+                    PreparedApkSet(packageName, versionCode, targetDirectory, files, files.sumOf { it.length() }, inspection),
                     alreadyPrepared = true
                 )
             }
@@ -109,16 +120,27 @@ class ApkSetPreparer(context: Context) {
                     destination
                 }
 
+                val inspection = inspect(copiedFiles)
+                    ?: error("APK validation failed: one or more files are not valid APK containers.")
                 val totalBytes = copiedFiles.sumOf { it.length() }
                 val metadata = JSONObject()
                     .put("packageName", packageName)
                     .put("versionCode", versionCode)
                     .put("versionName", packageInfo.versionName ?: "")
+                    .put("splitNames", JSONArray().apply { splitNames.forEach { put(it) } })
                     .put("apkCount", copiedFiles.size)
                     .put("totalBytes", totalBytes)
+                    .put("nativeAbis", JSONArray().apply { inspection.nativeAbis.forEach { put(it) } })
+                    .put("supportedAbis", JSONArray().apply { inspection.supportedAbis.forEach { put(it) } })
+                    .put("hasNativeLibraries", inspection.hasNativeLibraries)
+                    .put("deviceAbiCompatible", inspection.deviceAbiCompatible)
                     .put("files", JSONArray().apply {
-                        copiedFiles.forEach { file ->
-                            put(JSONObject().put("name", file.name).put("bytes", file.length()))
+                        inspection.reports.forEach { report ->
+                            put(JSONObject()
+                                .put("name", report.fileName)
+                                .put("bytes", report.sizeBytes)
+                                .put("sha256", report.sha256)
+                                .put("nativeAbis", JSONArray().apply { report.nativeAbis.forEach { put(it) } }))
                         }
                     })
                 File(stagingDirectory, "apk-set.json").writeText(metadata.toString())
@@ -131,7 +153,7 @@ class ApkSetPreparer(context: Context) {
                 }
                 val finalFiles = targetNames.map { File(targetDirectory, it) }
                 ApkPreparationResult.Success(
-                    PreparedApkSet(packageName, versionCode, targetDirectory, finalFiles, totalBytes),
+                    PreparedApkSet(packageName, versionCode, targetDirectory, finalFiles, totalBytes, inspection),
                     alreadyPrepared = false
                 )
             } catch (error: Exception) {
@@ -145,10 +167,14 @@ class ApkSetPreparer(context: Context) {
         }
     }
 
+    private fun inspect(files: List<File>): ApkSetInspection? =
+        (ApkArchiveInspector.inspect(files, Build.SUPPORTED_ABIS.toList()) as? ApkInspectionResult.Success)?.inspection
+
     private fun isComplete(directory: File, expectedNames: List<String>): Boolean {
         if (!directory.isDirectory || !File(directory, "apk-set.json").isFile) return false
+        val files = expectedNames.map { File(directory, it) }
         return expectedNames.all { name ->
             File(directory, name).let { it.isFile && it.length() > 0L }
-        }
+        } && inspect(files) != null
     }
 }
