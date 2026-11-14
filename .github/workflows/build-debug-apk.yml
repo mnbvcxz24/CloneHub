@@ -1,27 +1,21 @@
-name: Build VirtualApp Debug APK
+name: Build CloneHub Debug APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "third_party/VirtualApp"
-      - ".github/workflows/build-debug-apk.yml"
 
 permissions:
   contents: read
 
 jobs:
-  build-debug:
+  build:
     name: Build debug APK
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout CloneHub and VirtualApp
+      - name: Checkout latest main with VirtualApp source
         uses: actions/checkout@v4
         with:
+          ref: main
           submodules: recursive
-          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -32,21 +26,21 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK and NDK packages
+      - name: Install required Android SDK and NDK
         run: |
-          sdkmanager "platforms;android-34" "build-tools;30.0.0" "ndk;21.4.7075529"
           yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;30.0.0" "ndk;21.4.7075529"
 
-      - name: Build VirtualApp debug APKs
+      - name: Build CloneHub debug APK
         working-directory: third_party/VirtualApp
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon assembleDebug
 
-      - name: Upload debug APKs
+      - name: Upload CloneHub debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: VirtualApp-debug-apks
+          name: CloneHub-debug-apk
           path: third_party/VirtualApp/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
