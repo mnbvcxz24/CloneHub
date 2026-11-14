@@ -1,10 +1,10 @@
 package com.moldyhub.clonehub
 
-import java.io.FilterInputStream
-import java.io.InputStream
-import java.security.DigestInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.channels.FileChannel
+import java.nio.charset.Charset
 import java.security.MessageDigest
-import java.util.zip.ZipInputStream
 
 data class CveApkInspectionReport(
     val sha256: String,
@@ -15,49 +15,105 @@ data class CveApkInspectionReport(
     val nativeAbis: List<String>
 )
 
+/**
+ * Inspects APK ZIP metadata through a seekable descriptor.
+ *
+ * It reads the ZIP central directory instead of inflating every entry. APK payloads
+ * can contain hundreds of megabytes of assets; decompressing those merely to list
+ * filenames is unnecessary. The complete file is still streamed once for SHA-256.
+ */
 object CveApkArchiveInspector {
-    /** Scans a seek-free APK descriptor stream without writing into app-private storage. */
-    fun inspect(input: InputStream): CveApkInspectionReport {
-        val counter = CountingInputStream(input)
-        val digest = MessageDigest.getInstance("SHA-256")
-        val digestInput = DigestInputStream(counter, digest)
-        val zip = ZipInputStream(digestInput)
+    private const val EOCD_SIGNATURE = 0x06054b50
+    private const val CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
+    private const val EOCD_MIN_SIZE = 22
+    private const val MAX_COMMENT_LENGTH = 0xffff
+    private val UTF8: Charset = Charsets.UTF_8
+    private val CP437: Charset = Charset.forName("Cp437")
+
+    fun inspect(channel: FileChannel): CveApkInspectionReport {
+        val fileSize = channel.size()
+        require(fileSize >= EOCD_MIN_SIZE) { "APK is too small to be a ZIP archive." }
+
+        val tailSize = minOf(fileSize, (EOCD_MIN_SIZE + MAX_COMMENT_LENGTH).toLong()).toInt()
+        val tailStart = fileSize - tailSize
+        val tail = readBuffer(channel, tailStart, tailSize)
+        val eocdIndex = findEocd(tail)
+        require(eocdIndex >= 0) { "ZIP end-of-central-directory record was not found." }
+
+        val eocd = tail.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        eocd.position(eocdIndex)
+        val diskNumber = eocd.getShort(4).toInt() and 0xffff
+        val centralDisk = eocd.getShort(6).toInt() and 0xffff
+        val entriesOnDisk = eocd.getShort(8).toInt() and 0xffff
+        val totalEntries = eocd.getShort(10).toInt() and 0xffff
+        val centralSize = eocd.getInt(12).toLong() and 0xffffffffL
+        val centralOffset = eocd.getInt(16).toLong() and 0xffffffffL
+
+        require(diskNumber == 0 && centralDisk == 0 && entriesOnDisk == totalEntries) {
+            "Multi-disk ZIP archives are not supported."
+        }
+        require(totalEntries != 0xffff && centralSize != 0xffffffffL && centralOffset != 0xffffffffL) {
+            "ZIP64 APK archives are not supported by this scanner."
+        }
+        require(centralOffset + centralSize <= fileSize) {
+            "ZIP central directory points outside the APK."
+        }
+
+        var offset = centralOffset
+        val centralEnd = centralOffset + centralSize
         var entryCount = 0
         var hasManifest = false
         var dexFileCount = 0
         val abis = linkedSetOf<String>()
-        val buffer = ByteArray(32 * 1024)
 
-        try {
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                entryCount++
-                when {
-                    entry.name == "AndroidManifest.xml" -> hasManifest = true
-                    entry.name.matches(Regex("classes(\\d*)\\.dex")) -> dexFileCount++
-                    entry.name.startsWith("lib/") -> {
-                        val parts = entry.name.split('/')
-                        if (parts.size >= 3 && parts[1].isNotBlank()) abis.add(parts[1])
-                    }
-                }
-                while (zip.read(buffer) != -1) {
-                    // Drain each compressed entry; no APK code is loaded or executed.
-                }
-                zip.closeEntry()
+        while (offset < centralEnd) {
+            require(centralEnd - offset >= 46L) { "Truncated ZIP central directory." }
+            val header = readBuffer(channel, offset, 46).order(ByteOrder.LITTLE_ENDIAN)
+            require(header.int == CENTRAL_DIRECTORY_SIGNATURE) {
+                "Invalid ZIP central directory entry signature."
             }
+            header.position(28)
+            val nameLength = header.short.toInt() and 0xffff
+            val extraLength = header.short.toInt() and 0xffff
+            val commentLength = header.short.toInt() and 0xffff
+            val recordLength = 46L + nameLength + extraLength + commentLength
+            require(offset + recordLength <= centralEnd) { "Truncated ZIP entry metadata." }
 
-            // ZipInputStream stops at the central directory. Drain the remaining raw
-            // bytes so the digest and byte count cover the complete APK file.
-            while (digestInput.read(buffer) != -1) {
-                // Hash remaining ZIP directory and end-of-central-directory records.
+            val nameBuffer = readBuffer(channel, offset + 46L, nameLength)
+            val nameBytes = ByteArray(nameLength)
+            nameBuffer.get(nameBytes)
+            val flagsBuffer = readBuffer(channel, offset + 8L, 2).order(ByteOrder.LITTLE_ENDIAN)
+            val flags = flagsBuffer.short.toInt() and 0xffff
+            val name = String(nameBytes, if ((flags and (1 shl 11)) != 0) UTF8 else CP437)
+
+            entryCount++
+            when {
+                name == "AndroidManifest.xml" -> hasManifest = true
+                name.matches(Regex("classes(\\d*)\\.dex")) -> dexFileCount++
+                name.startsWith("lib/") -> {
+                    val parts = name.split('/')
+                    if (parts.size >= 3 && parts[1].isNotBlank()) abis.add(parts[1])
+                }
             }
-        } finally {
-            runCatching { zip.close() }
+            offset += recordLength
+        }
+        require(offset == centralEnd) { "ZIP central directory size did not match its entries." }
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hashBuffer = ByteBuffer.allocate(256 * 1024)
+        var position = 0L
+        while (position < fileSize) {
+            hashBuffer.clear()
+            hashBuffer.limit(minOf(hashBuffer.capacity().toLong(), fileSize - position).toInt())
+            val count = channel.read(hashBuffer, position)
+            require(count > 0) { "Could not read the complete APK for SHA-256." }
+            digest.update(hashBuffer.array(), 0, count)
+            position += count
         }
 
         return CveApkInspectionReport(
             sha256 = digest.digest().joinToString("") { "%02x".format(it) },
-            bytesRead = counter.bytesRead,
+            bytesRead = fileSize,
             entryCount = entryCount,
             hasManifest = hasManifest,
             dexFileCount = dexFileCount,
@@ -65,20 +121,26 @@ object CveApkArchiveInspector {
         )
     }
 
-    private class CountingInputStream(input: InputStream) : FilterInputStream(input) {
-        var bytesRead: Long = 0
-            private set
-
-        override fun read(): Int {
-            val value = super.read()
-            if (value >= 0) bytesRead++
-            return value
+    private fun findEocd(buffer: ByteBuffer): Int {
+        val view = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        for (index in view.limit() - EOCD_MIN_SIZE downTo 0) {
+            if (view.getInt(index) == EOCD_SIGNATURE) {
+                val commentLength = view.getShort(index + 20).toInt() and 0xffff
+                if (index + EOCD_MIN_SIZE + commentLength == view.limit()) return index
+            }
         }
+        return -1
+    }
 
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-            val count = super.read(buffer, offset, length)
-            if (count > 0) bytesRead += count
-            return count
+    private fun readBuffer(channel: FileChannel, position: Long, size: Int): ByteBuffer {
+        val buffer = ByteBuffer.allocate(size)
+        var offset = position
+        while (buffer.hasRemaining()) {
+            val count = channel.read(buffer, offset)
+            require(count > 0) { "Unexpected end of APK while reading ZIP metadata." }
+            offset += count
         }
+        buffer.flip()
+        return buffer
     }
 }
