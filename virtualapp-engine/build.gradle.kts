@@ -5,7 +5,7 @@ plugins {
 android {
     namespace = "com.lody.virtual"
     compileSdk = 35
-    ndkVersion = "21.4.7075529"
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         minSdk = 21
