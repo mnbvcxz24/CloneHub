@@ -33,21 +33,22 @@ internal object DiagnosticsLogger {
         if (crashHandlerInstalled) return
         synchronized(this) {
             if (crashHandlerInstalled) return
-            val appContext = context.applicationContext
+            // attachBaseContext runs before Application is fully attached; applicationContext may be null here.
+            val safeContext = context
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
                 runCatching {
                     val writer = StringWriter()
                     error.printStackTrace(PrintWriter(writer))
                     record(
-                        appContext,
+                        safeContext,
                         "FATAL uncaught exception on thread=${thread.name}:\n$writer"
                     )
                 }
                 previous?.uncaughtException(thread, error)
             }
             crashHandlerInstalled = true
-            record(appContext, "Crash diagnostic handler installed")
+            record(safeContext, "Crash diagnostic handler installed")
         }
     }
 
