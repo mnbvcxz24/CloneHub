@@ -483,21 +483,26 @@ class MainActivity : Activity() {
                 isEnabled = actionLabel != "Added"
                 setOnClickListener { onAction() }
             }
-            if (tertiaryActionLabel != null && onTertiaryAction != null) {
-                addView(Button(this@MainActivity).apply {
-                    text = tertiaryActionLabel
-                    isAllCaps = false
-                    setOnClickListener { onTertiaryAction() }
-                })
+            val actionColumn = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                if (tertiaryActionLabel != null && onTertiaryAction != null) {
+                    addView(Button(this@MainActivity).apply {
+                        text = tertiaryActionLabel
+                        isAllCaps = false
+                        setOnClickListener { onTertiaryAction() }
+                    })
+                }
+                if (secondaryActionLabel != null && onSecondaryAction != null) {
+                    addView(Button(this@MainActivity).apply {
+                        text = secondaryActionLabel
+                        isAllCaps = false
+                        setOnClickListener { onSecondaryAction() }
+                    })
+                }
+                addView(action)
             }
-            if (secondaryActionLabel != null && onSecondaryAction != null) {
-                addView(Button(this@MainActivity).apply {
-                    text = secondaryActionLabel
-                    isAllCaps = false
-                    setOnClickListener { onSecondaryAction() }
-                })
-            }
-            addView(action)
+            addView(actionColumn)
         }
     }
 
