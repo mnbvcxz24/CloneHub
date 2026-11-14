@@ -437,8 +437,8 @@ class MainActivity : Activity() {
         card.addView(appIcon(app), LinearLayout.LayoutParams(dp(44), dp(44)))
         val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
         val runtimeStatus = when {
-            !VirtualAppRuntime.initialized -> "VirtualApp not initialized"
             userId > 0 -> "Installed in virtual user #$userId"
+            !VirtualAppRuntime.initialized -> "VirtualApp not initialized"
             else -> "Prepared profile • not installed in runtime"
         }
         val details = LinearLayout(this).apply {
@@ -485,12 +485,12 @@ class MainActivity : Activity() {
 
     private fun installRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
         if (!VirtualAppRuntime.initialized) {
-            workerStatusText.text = "INITIALIZING NEWBLACKBOX • first-use setup..."
+            workerStatusText.text = "INITIALIZING VIRTUALAPP • first-use setup..."
             try {
                 VirtualAppRuntime.initialize(applicationContext)
             } catch (error: Throwable) {
                 val message = error.message ?: error.javaClass.simpleName
-                workerStatusText.text = "NEWBLACKBOX INITIALIZATION FAILED • $message"
+                workerStatusText.text = "VIRTUALAPP INITIALIZATION FAILED • $message"
                 DiagnosticsLogger.record(this, "VirtualApp initialization failed: ${error.javaClass.name}: $message")
                 Toast.makeText(this, "VirtualApp initialization failed: $message", Toast.LENGTH_LONG).show()
                 return
@@ -543,11 +543,11 @@ class MainActivity : Activity() {
     private fun launchRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
         if (!VirtualAppRuntime.initialized) {
             try {
-                workerStatusText.text = "INITIALIZING NEWBLACKBOX..."
+                workerStatusText.text = "INITIALIZING VIRTUALAPP..."
                 VirtualAppRuntime.initialize(applicationContext)
             } catch (error: Throwable) {
                 val message = error.message ?: error.javaClass.simpleName
-                workerStatusText.text = "NEWBLACKBOX INITIALIZATION FAILED • $message"
+                workerStatusText.text = "VIRTUALAPP INITIALIZATION FAILED • $message"
                 DiagnosticsLogger.record(this, "VirtualApp initialization failed: ${error.javaClass.name}: $message")
                 Toast.makeText(this, "VirtualApp initialization failed: $message", Toast.LENGTH_LONG).show()
                 return

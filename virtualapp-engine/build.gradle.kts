@@ -15,6 +15,10 @@ android {
         }
     }
 
+    buildFeatures {
+        aidl = true
+    }
+
     sourceSets {
         getByName("main") {
             manifest.srcFile("../third_party/VirtualApp/lib/src/main/AndroidManifest.xml")
