@@ -170,7 +170,7 @@ class MainActivity : Activity() {
         }
         header.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(TextView(this).apply {
-            text = "ALPHA 21"
+            text = "ALPHA 22"
             textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(196, 188, 255))
@@ -283,7 +283,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(3))
         })
         workerStatusText = TextView(this).apply {
-            text = "BlackBox: ${BlackBoxRuntime.statusText()}. Runtime smoke testing is separate from the isolated helper process; this fork does not claim game compatibility."
+            text = "SAFE MODE • BlackBox auto-start is disabled after the Alpha21 startup crash. The dashboard and APK preparation remain available; runtime testing is paused."
             textSize = 12f
             setTextColor(MUTED)
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -438,7 +438,7 @@ class MainActivity : Activity() {
         card.addView(appIcon(app), LinearLayout.LayoutParams(dp(44), dp(44)))
         val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
         val runtimeStatus = when {
-            !BlackBoxRuntime.initialized -> BlackBoxRuntime.statusText()
+            !BlackBoxRuntime.initialized -> "Runtime disabled in safe mode"
             userId > 0 -> "Installed in virtual user #$userId"
             else -> "Prepared profile • not installed in runtime"
         }
