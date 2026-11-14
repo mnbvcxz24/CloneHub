@@ -11,6 +11,7 @@ import android.os.Message
 import android.os.Messenger
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import java.io.FileInputStream
 import java.util.concurrent.Executors
 
 /**
@@ -95,8 +96,8 @@ class CveWorkerService : Service() {
 
             try {
                 require(packageName.isNotBlank()) { "Package name was missing." }
-                val report = ParcelFileDescriptor.AutoCloseInputStream(descriptor).use {
-                    CveApkArchiveInspector.inspect(it)
+                val report = FileInputStream(descriptor.fileDescriptor).use { input ->
+                    CveApkArchiveInspector.inspect(input.channel)
                 }
                 responseData.putBoolean(CveWorkerProtocol.KEY_SCAN_OK, true)
                 responseData.putString(CveWorkerProtocol.KEY_SHA256, report.sha256)
