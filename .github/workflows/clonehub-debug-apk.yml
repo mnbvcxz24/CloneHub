@@ -38,7 +38,19 @@ jobs:
             echo "sdkmanager was not found under $ANDROID_HOME/cmdline-tools"
             exit 1
           fi
+
+          # sdkmanager may close the input after accepting all licenses;
+          # disable pipefail only for this yes pipeline to avoid a SIGPIPE
+          # from yes being mistaken for a license-acceptance failure.
+          set +o pipefail
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses
+          LICENSE_STATUS=${PIPESTATUS[1]}
+          set -o pipefail
+          if [ "$LICENSE_STATUS" -ne 0 ]; then
+            echo "Android SDK license acceptance failed with exit code $LICENSE_STATUS"
+            exit "$LICENSE_STATUS"
+          fi
+
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
             "platforms;android-34" \
