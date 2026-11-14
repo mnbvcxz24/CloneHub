@@ -1,8 +1,23 @@
 package com.moldyhub.clonehub
 
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import java.util.zip.ZipFile
+
+/** One manifest-declared component. This is metadata, not proof the component can run in CVE. */
+data class AppComponentDescriptor(
+    val name: String,
+    val exported: Boolean,
+    val enabled: Boolean,
+    val permission: String? = null,
+    val authorities: String? = null
+)
+
+data class AppPermissionDescriptor(
+    val name: String,
+    val grantedOnHost: Boolean
+)
 
 /** Read-only metadata about an already-installed app. This does not launch or clone it. */
 data class AppPackageDescriptor(
@@ -14,10 +29,16 @@ data class AppPackageDescriptor(
     val targetSdk: Int,
     val launchActivity: String?,
     val apkPaths: List<String>,
-    val nativeAbis: List<String>
+    val nativeAbis: List<String>,
+    val requestedPermissions: List<AppPermissionDescriptor> = emptyList(),
+    val activities: List<AppComponentDescriptor> = emptyList(),
+    val services: List<AppComponentDescriptor> = emptyList(),
+    val receivers: List<AppComponentDescriptor> = emptyList(),
+    val providers: List<AppComponentDescriptor> = emptyList()
 ) {
     val hasLaunchActivity: Boolean get() = !launchActivity.isNullOrBlank()
     val hasNativeLibraries: Boolean get() = nativeAbis.isNotEmpty()
+    val splitApkCount: Int get() = (apkPaths.size - 1).coerceAtLeast(0)
 }
 
 sealed class AppPackageInspectionResult {
@@ -49,14 +70,20 @@ class AppPackageInspector(private val packageManager: PackageManager) {
                 packageManager.getApplicationInfo(packageName, 0)
             }
 
+            val queryFlags = PackageManager.GET_PERMISSIONS or
+                PackageManager.GET_ACTIVITIES or
+                PackageManager.GET_SERVICES or
+                PackageManager.GET_RECEIVERS or
+                PackageManager.GET_PROVIDERS
+
             val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 packageManager.getPackageInfo(
                     packageName,
-                    PackageManager.PackageInfoFlags.of(0)
+                    PackageManager.PackageInfoFlags.of(queryFlags.toLong())
                 )
             } else {
                 @Suppress("DEPRECATION")
-                packageManager.getPackageInfo(packageName, 0)
+                packageManager.getPackageInfo(packageName, queryFlags)
             }
 
             val launchActivity = packageManager.getLaunchIntentForPackage(packageName)
@@ -66,6 +93,17 @@ class AppPackageInspector(private val packageManager: PackageManager) {
                 if (appInfo.sourceDir.isNotBlank()) add(appInfo.sourceDir)
                 appInfo.splitSourceDirs?.filter { it.isNotBlank() }?.let { addAll(it) }
             }.distinct()
+
+            val permissionNames = packageInfo.requestedPermissions.orEmpty()
+            val permissionFlags = packageInfo.requestedPermissionsFlags.orEmpty()
+            val permissions = permissionNames.mapIndexed { index, name ->
+                AppPermissionDescriptor(
+                    name = name,
+                    grantedOnHost = permissionFlags.getOrNull(index)?.and(
+                        PackageInfo.REQUESTED_PERMISSION_GRANTED
+                    ) != 0
+                )
+            }
 
             AppPackageInspectionResult.Success(
                 AppPackageDescriptor(
@@ -77,7 +115,23 @@ class AppPackageInspector(private val packageManager: PackageManager) {
                     targetSdk = appInfo.targetSdkVersion,
                     launchActivity = launchActivity,
                     apkPaths = apkPaths,
-                    nativeAbis = findNativeAbis(apkPaths)
+                    nativeAbis = findNativeAbis(apkPaths),
+                    requestedPermissions = permissions,
+                    activities = packageInfo.activities.orEmpty().map {
+                        AppComponentDescriptor(it.name, it.exported, it.enabled, it.permission)
+                    },
+                    services = packageInfo.services.orEmpty().map {
+                        AppComponentDescriptor(it.name, it.exported, it.enabled, it.permission)
+                    },
+                    receivers = packageInfo.receivers.orEmpty().map {
+                        AppComponentDescriptor(it.name, it.exported, it.enabled, it.permission)
+                    },
+                    providers = packageInfo.providers.orEmpty().map {
+                        AppComponentDescriptor(
+                            it.name, it.exported, it.enabled, it.readPermission ?: it.writePermission,
+                            it.authority
+                        )
+                    }
                 )
             )
         } catch (_: PackageManager.NameNotFoundException) {

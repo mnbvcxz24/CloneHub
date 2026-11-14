@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var workerStatusText: TextView
     private lateinit var workerTestButton: Button
     private lateinit var workerInspectButton: Button
+    private lateinit var capabilityInspectButton: Button
 
     private val preferences by lazy {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
@@ -85,6 +86,12 @@ class MainActivity : Activity() {
             setOnClickListener { chooseAppForInspection() }
         }
 
+        capabilityInspectButton = Button(this).apply {
+            text = "Inspect app capabilities"
+            isAllCaps = false
+            setOnClickListener { chooseAppForCapabilityInspection() }
+        }
+
         val workerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -98,6 +105,7 @@ class MainActivity : Activity() {
             addView(workerStatusText)
             addView(workerTestButton)
             addView(workerInspectButton)
+            addView(capabilityInspectButton)
         }
 
         val libraryTitle = sectionTitle("My library")
@@ -227,6 +235,91 @@ class MainActivity : Activity() {
                     workerStatusText.text = "APK INSPECTION FAILED • ${result.reason}"
                     Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    private fun chooseAppForCapabilityInspection() {
+        val packages = getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }
+        if (packages.isEmpty()) {
+            Toast.makeText(this, "Add an app to My library first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = packages.map { getAppLabel(it) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Inspect app capabilities")
+            .setItems(labels) { _, which -> inspectAppCapabilities(packages[which]) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun inspectAppCapabilities(appPackage: String) {
+        capabilityInspectButton.isEnabled = false
+        capabilityInspectButton.text = "Inspecting..."
+        workerStatusText.text = "Reading package metadata and manifest-declared capabilities..."
+
+        val result = AppPackageInspector(packageManager).inspect(appPackage)
+        capabilityInspectButton.isEnabled = true
+        capabilityInspectButton.text = "Inspect app capabilities"
+
+        when (result) {
+            is AppPackageInspectionResult.Success -> {
+                val app = result.descriptor
+                val compatibility = AppCompatibilityEvaluator.evaluate(
+                    app = app,
+                    deviceApiLevel = android.os.Build.VERSION.SDK_INT,
+                    deviceSupportedAbis = android.os.Build.SUPPORTED_ABIS.toList()
+                )
+                val permissionLines = app.requestedPermissions
+                    .joinToString("\\n") { permission ->
+                        "• ${permission.name} (host granted: ${permission.grantedOnHost})"
+                    }.ifBlank { "None declared" }
+                fun componentLines(items: List<AppComponentDescriptor>): String =
+                    items.joinToString("\\n") {
+                        "• ${it.name} (exported: ${it.exported}, enabled: ${it.enabled})"
+                    }.ifBlank { "None declared" }
+
+                val reportText = buildString {
+                    append("APP CAPABILITY REPORT")
+                    append("\\nPackage: ${app.packageName}")
+                    append("\\nApp: ${app.appLabel}")
+                    append("\\nVersion: ${app.versionName ?: "unknown"} (${app.versionCode})")
+                    append("\\nAndroid SDK: min ${app.minSdk} • target ${app.targetSdk}")
+                    append("\\nLaunch activity: ${app.launchActivity ?: "not found"}")
+                    append("\\nAPK files: ${app.apkPaths.size} (splits: ${app.splitApkCount})")
+                    append("\\nNative ABIs: ${app.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
+                    append("\\n\\nPRELIMINARY DEVICE CHECK: ${if (compatibility.compatible) "No basic blocker detected" else "BLOCKED"}")
+                    if (compatibility.blockers.isNotEmpty()) {
+                        append("\\n\\nBlockers:\\n")
+                        append(compatibility.blockers.joinToString("\\n") { "• $it" })
+                    }
+                    append("\\n\\nRequested permissions (${app.requestedPermissions.size}):\\n")
+                    append(permissionLines)
+                    append("\\n\\nActivities (${app.activities.size}):\\n")
+                    append(componentLines(app.activities))
+                    append("\\n\\nServices (${app.services.size}):\\n")
+                    append(componentLines(app.services))
+                    append("\\n\\nReceivers (${app.receivers.size}):\\n")
+                    append(componentLines(app.receivers))
+                    append("\\n\\nProviders (${app.providers.size}):\\n")
+                    append(componentLines(app.providers))
+                    append("\\n\\nNotes:\\n")
+                    append(compatibility.notes.joinToString("\\n") { "• $it" })
+                }
+                workerStatusText.text = "CAPABILITY INSPECTION COMPLETE • ${app.packageName}"
+                AlertDialog.Builder(this)
+                    .setTitle("App capability report")
+                    .setMessage(reportText)
+                    .setPositiveButton("Close", null)
+                    .show()
+            }
+            is AppPackageInspectionResult.NotFound -> {
+                workerStatusText.text = "APP NOT FOUND • ${result.packageName}"
+                Toast.makeText(this, "The selected app is no longer installed.", Toast.LENGTH_LONG).show()
+            }
+            is AppPackageInspectionResult.Failed -> {
+                workerStatusText.text = "CAPABILITY INSPECTION FAILED • ${result.reason}"
+                Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
             }
         }
     }

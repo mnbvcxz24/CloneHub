@@ -33,6 +33,13 @@ object AppCompatibilityEvaluator {
         if (app.apkPaths.isEmpty()) {
             notes += "APK source paths were not exposed by PackageManager."
         }
+        notes += "Found ${app.requestedPermissions.size} requested permissions; host grant state is informational only."
+        notes += "Manifest components: ${app.activities.size} activities, ${app.services.size} services, " +
+            "${app.receivers.size} receivers, ${app.providers.size} providers."
+        if (app.splitApkCount > 0) {
+            notes += "The installed app uses ${app.splitApkCount} split APK file(s)."
+        }
+        notes += "Preliminary device checks do not guarantee that this app can execute inside CloneHub."
 
         return AppCompatibilityReport(
             compatible = blockers.isEmpty(),
