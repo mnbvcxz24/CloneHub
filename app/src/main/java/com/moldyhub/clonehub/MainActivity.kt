@@ -24,8 +24,7 @@ import java.io.File
  * CloneHub multi-instance dashboard.
  *
  * This screen manages app-library entries and prepared instance profiles.
- * The execution backend is intentionally reported as pending until a real
- * isolated target-app process can be started and verified.
+ * VirtualApp is integrated as the guest runtime; the dashboard and instance records remain CloneHub-owned.
  */
 class MainActivity : Activity() {
 
@@ -170,7 +169,7 @@ class MainActivity : Activity() {
         }
         header.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(TextView(this).apply {
-            text = "ALPHA 24"
+            text = "ALPHA 25"
             textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(196, 188, 255))
@@ -276,21 +275,21 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(174, 162, 255))
         })
         card.addView(TextView(this).apply {
-            text = "Isolated worker"
+            text = "VirtualApp runtime"
             textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             setPadding(0, dp(6), 0, dp(3))
         })
         workerStatusText = TextView(this).apply {
-            text = "NewBlackbox is linked but stays dormant until you install an instance. Tap Install to initialize the engine on demand."
+            text = "VirtualApp stays dormant until you install an instance. Tap Install to initialize the guest runtime."
             textSize = 12f
             setTextColor(MUTED)
             setLineSpacing(dp(2).toFloat(), 1f)
         }
         card.addView(workerStatusText)
         workerTestButton = Button(this).apply {
-            text = "Test isolated worker"
+            text = "Test helper process"
             isAllCaps = false
             setOnClickListener { testCveWorker() }
         }
@@ -438,7 +437,7 @@ class MainActivity : Activity() {
         card.addView(appIcon(app), LinearLayout.LayoutParams(dp(44), dp(44)))
         val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
         val runtimeStatus = when {
-            !NewBlackboxRuntime.initialized -> "NewBlackbox not initialized"
+            !VirtualAppRuntime.initialized -> "VirtualApp not initialized"
             userId > 0 -> "Installed in virtual user #$userId"
             else -> "Prepared profile • not installed in runtime"
         }
@@ -485,15 +484,15 @@ class MainActivity : Activity() {
     private fun runtimeUserKey(instanceId: String) = "user_$instanceId"
 
     private fun installRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
-        if (!NewBlackboxRuntime.initialized) {
+        if (!VirtualAppRuntime.initialized) {
             workerStatusText.text = "INITIALIZING NEWBLACKBOX • first-use setup..."
             try {
-                NewBlackboxRuntime.initialize(applicationContext)
+                VirtualAppRuntime.initialize(applicationContext)
             } catch (error: Throwable) {
                 val message = error.message ?: error.javaClass.simpleName
                 workerStatusText.text = "NEWBLACKBOX INITIALIZATION FAILED • $message"
-                DiagnosticsLogger.record(this, "NewBlackbox initialization failed: ${error.javaClass.name}: $message")
-                Toast.makeText(this, "NewBlackbox initialization failed: $message", Toast.LENGTH_LONG).show()
+                DiagnosticsLogger.record(this, "VirtualApp initialization failed: ${error.javaClass.name}: $message")
+                Toast.makeText(this, "VirtualApp initialization failed: $message", Toast.LENGTH_LONG).show()
                 return
             }
         }
@@ -503,27 +502,24 @@ class MainActivity : Activity() {
             Toast.makeText(this, "The selected app is no longer installed.", Toast.LENGTH_LONG).show()
             return
         }
-        if (!appInfo.splitSourceDirs.isNullOrEmpty()) {
-            Toast.makeText(
-                this,
-                "This runtime test currently supports single-APK apps only. Split APK installation is not connected yet.",
-                Toast.LENGTH_LONG
-            ).show()
-            return
+        val apkPath = if (!appInfo.splitSourceDirs.isNullOrEmpty()) {
+            File(appInfo.sourceDir).parentFile?.absolutePath ?: appInfo.sourceDir
+        } else {
+            appInfo.sourceDir
         }
 
-        workerStatusText.text = "Installing ${instance.packageName} into a NewBlackbox virtual user..."
+        workerStatusText.text = "Installing ${instance.packageName} into a VirtualApp virtual user..."
         Thread {
             var userId = -1
             try {
-                userId = NewBlackboxRuntime.allocateUserId(this)
-                NewBlackboxRuntime.installApp(instance.packageName, userId)
+                userId = VirtualAppRuntime.allocateUserId(this, instance.configuration.displayName ?: instance.instanceId)
+                VirtualAppRuntime.installApp(instance.packageName, apkPath, userId)
                 check(runtimePreferences.edit()
                     .putInt(runtimeUserKey(instance.instanceId), userId)
                     .commit()) { "Could not save the virtual user mapping." }
                 DiagnosticsLogger.record(
                     this,
-                    "NewBlackbox virtual install succeeded: package=${instance.packageName}, instance=${instance.instanceId}, userId=$userId"
+                    "VirtualApp virtual install succeeded: package=${instance.packageName}, instance=${instance.instanceId}, userId=$userId"
                 )
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
@@ -532,9 +528,9 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "Installed into virtual user #$userId.", Toast.LENGTH_LONG).show()
                 }
             } catch (error: Throwable) {
-                if (userId > 0) runCatching { NewBlackboxRuntime.deleteUser(userId) }
+                if (userId > 0) runCatching { VirtualAppRuntime.deleteUser(userId) }
                 val message = error.message ?: error.javaClass.simpleName
-                DiagnosticsLogger.record(this, "NewBlackbox virtual install failed: ${error.javaClass.name}: $message")
+                DiagnosticsLogger.record(this, "VirtualApp virtual install failed: ${error.javaClass.name}: $message")
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     workerStatusText.text = "VIRTUAL INSTALL FAILED • $message"
@@ -545,15 +541,15 @@ class MainActivity : Activity() {
     }
 
     private fun launchRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
-        if (!NewBlackboxRuntime.initialized) {
+        if (!VirtualAppRuntime.initialized) {
             try {
                 workerStatusText.text = "INITIALIZING NEWBLACKBOX..."
-                NewBlackboxRuntime.initialize(applicationContext)
+                VirtualAppRuntime.initialize(applicationContext)
             } catch (error: Throwable) {
                 val message = error.message ?: error.javaClass.simpleName
                 workerStatusText.text = "NEWBLACKBOX INITIALIZATION FAILED • $message"
-                DiagnosticsLogger.record(this, "NewBlackbox initialization failed: ${error.javaClass.name}: $message")
-                Toast.makeText(this, "NewBlackbox initialization failed: $message", Toast.LENGTH_LONG).show()
+                DiagnosticsLogger.record(this, "VirtualApp initialization failed: ${error.javaClass.name}: $message")
+                Toast.makeText(this, "VirtualApp initialization failed: $message", Toast.LENGTH_LONG).show()
                 return
             }
         }
@@ -563,34 +559,34 @@ class MainActivity : Activity() {
             return
         }
         try {
-            val launched = NewBlackboxRuntime.launchApp(instance.packageName, userId)
+            val launched = VirtualAppRuntime.launchApp(instance.packageName, userId)
             if (launched) {
                 workerStatusText.text = "VIRTUAL LAUNCH REQUEST SENT • ${instance.packageName} • user $userId"
-                DiagnosticsLogger.record(this, "NewBlackbox launch accepted: package=${instance.packageName}, userId=$userId")
+                DiagnosticsLogger.record(this, "VirtualApp launch accepted: package=${instance.packageName}, userId=$userId")
             } else {
-                Toast.makeText(this, "NewBlackbox could not start this app instance.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "VirtualApp could not start this app instance.", Toast.LENGTH_LONG).show()
             }
         } catch (error: Throwable) {
             val message = error.message ?: error.javaClass.simpleName
-            DiagnosticsLogger.record(this, "NewBlackbox virtual launch failed: ${error.javaClass.name}: $message")
+            DiagnosticsLogger.record(this, "VirtualApp virtual launch failed: ${error.javaClass.name}: $message")
             Toast.makeText(this, "Virtual launch failed: $message", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun removeRuntimeInstance(instance: com.moldyhub.clonehub.cve.VirtualAppInstance) {
         val userId = runtimePreferences.getInt(runtimeUserKey(instance.instanceId), -1)
-        if (userId > 0 && !NewBlackboxRuntime.initialized) {
+        if (userId > 0 && !VirtualAppRuntime.initialized) {
             try {
-                NewBlackboxRuntime.initialize(applicationContext)
+                VirtualAppRuntime.initialize(applicationContext)
             } catch (error: Throwable) {
                 val message = error.message ?: error.javaClass.simpleName
-                Toast.makeText(this, "NewBlackbox initialization failed: $message", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "VirtualApp initialization failed: $message", Toast.LENGTH_LONG).show()
                 return
             }
         }
         Thread {
             try {
-                if (userId > 0) NewBlackboxRuntime.deleteUser(userId)
+                if (userId > 0) VirtualAppRuntime.deleteUser(userId)
                 runtimePreferences.edit().remove(runtimeUserKey(instance.instanceId)).commit()
                 instanceStore.remove(instance.instanceId)
                 runOnUiThread {
@@ -721,7 +717,7 @@ class MainActivity : Activity() {
         CveWorkerClient(this).ping { result ->
             if (isFinishing || isDestroyed) return@ping
             workerTestButton.isEnabled = true
-            workerTestButton.text = "Test isolated worker"
+            workerTestButton.text = "Test helper process"
             when (result) {
                 is CveWorkerClient.Result.Ready -> {
                     val h = result.handshake

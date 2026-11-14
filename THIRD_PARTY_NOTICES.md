@@ -1,10 +1,12 @@
 # Third-party notices
 
-## NewBlackbox
+## VirtualApp
 
-- Source: https://github.com/ALEX5402/NewBlackbox
-- Pinned revision: 89b59836c66f173756a4ae258cf379a957649820
+- Source: https://github.com/ISEKHON/VirtualApp
+- Pinned revision: b3c634ad7941765df3da84a207aca94b7861afae
 - License: Apache License 2.0
-- The upstream LICENSE file is retained inside the submodule at `third_party/NewBlackbox/LICENSE`.
+- The upstream LICENSE file is retained at `third_party/VirtualApp/LICENSE`.
+- CloneHub links only the upstream `lib` engine module. The upstream launcher and host UI are not included; CloneHub keeps its own dashboard and instance manager.
+- The upstream project credits VirtualApp by asLody, VirtualXposed, And64InlineHook, fbjni, and Epic. Their notices and applicable license terms must be retained when redistributing derived binaries.
 
-CloneHub links the NewBlackbox Bcore module as an app dependency. Engine initialization is deferred until the user taps Install/Launch on an instance; it is not started during host application startup. The dashboard and instance-management UI remain owned by CloneHub.
+The VirtualApp repository describes itself as unstable and documents known compatibility limits. CloneHub therefore reports install and launch outcomes from the engine rather than treating a saved profile as a running guest app.

@@ -8,6 +8,7 @@ on:
       - "app/**"
       - "cve/**"
       - "third_party/**"
+      - "virtualapp-engine/**"
       - ".gitmodules"
       - "settings.gradle.kts"
       - "build.gradle.kts"
@@ -43,12 +44,12 @@ jobs:
         with:
           packages: "platform-tools"
 
-      - name: Install required Android NDK
+      - name: Install VirtualApp native build NDK
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --install "ndk;29.0.13846066"
-          test -d "$ANDROID_HOME/ndk/29.0.13846066"
+          sdkmanager --install "ndk;21.4.7075529"
+          test -d "$ANDROID_HOME/ndk/21.4.7075529"
 
       - name: Set up Gradle 8.13
         uses: gradle/actions/setup-gradle@v4

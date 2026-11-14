@@ -17,8 +17,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "CloneHub"
 
-include(":app", ":cve", ":Bcore", ":black-reflection", ":compiler")
+include(":app", ":cve", ":virtualapp-engine")
 project(":cve").projectDir = file("cve")
-project(":Bcore").projectDir = file("third_party/NewBlackbox/Bcore")
-project(":black-reflection").projectDir = file("third_party/NewBlackbox/black-reflection")
-project(":compiler").projectDir = file("third_party/NewBlackbox/compiler")

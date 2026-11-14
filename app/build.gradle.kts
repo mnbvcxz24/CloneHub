@@ -11,8 +11,8 @@ android {
         applicationId = "com.moldyhub.clonehub"
         minSdk = 29
         targetSdk = 28
-        versionCode = 24
-        versionName = "0.1.0-alpha24"
+        versionCode = 25
+        versionName = "0.1.0-alpha25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -29,6 +29,6 @@ android {
 
 dependencies {
     implementation(project(":cve"))
-    implementation(project(":Bcore"))
+    implementation(project(":virtualapp-engine"))
     testImplementation("junit:junit:4.13.2")
 }
