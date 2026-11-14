@@ -31,13 +31,13 @@ class CveWorkerService : Service() {
     private inner class WorkerHandler : Handler(Looper.getMainLooper()) {
         override fun handleMessage(message: Message) {
             when (message.what) {
-                CveWorkerProtocol.MSG_PING -> replyHandshake(message)
-                CveWorkerProtocol.MSG_INSPECT_APK -> workerExecutor.execute { inspectApk(message) }
+                CveWorkerProtocol.MSG_PING -> replyHandshake(message.replyTo)
+                CveWorkerProtocol.MSG_INSPECT_APK -> enqueueApkInspection(message)
                 else -> super.handleMessage(message)
             }
         }
 
-        private fun replyHandshake(message: Message) {
+        private fun replyHandshake(replyTo: Messenger?) {
             val response = Message.obtain(null, CveWorkerProtocol.MSG_PONG).apply {
                 arg1 = CveWorkerProtocol.VERSION
                 arg2 = Process.myUid()
@@ -45,10 +45,15 @@ class CveWorkerService : Service() {
                     putInt(CveWorkerProtocol.KEY_PROCESS_ID, Process.myPid())
                 }
             }
-            runCatching { message.replyTo?.send(response) }
+            runCatching { replyTo?.send(response) }
         }
 
-        private fun inspectApk(message: Message) {
+        /**
+         * Copy every value out of the incoming Message before returning from
+         * Handler.handleMessage. Android recycles Message instances after dispatch.
+         */
+        private fun enqueueApkInspection(message: Message) {
+            val replyTo = message.replyTo
             val request = message.data
             val packageName = request.getString(CveWorkerProtocol.KEY_PACKAGE_NAME).orEmpty()
             val descriptor = if (Build.VERSION.SDK_INT >= 33) {
@@ -58,6 +63,30 @@ class CveWorkerService : Service() {
                 request.getParcelable<ParcelFileDescriptor>(CveWorkerProtocol.KEY_APK_FD)
             }
 
+            if (descriptor == null) {
+                sendInspectionFailure(replyTo, packageName, "Read-only APK file descriptor was missing.")
+                return
+            }
+
+            try {
+                workerExecutor.execute {
+                    inspectApk(packageName, descriptor, replyTo)
+                }
+            } catch (error: Exception) {
+                runCatching { descriptor.close() }
+                sendInspectionFailure(
+                    replyTo,
+                    packageName,
+                    error.message ?: "APK inspection worker could not be scheduled."
+                )
+            }
+        }
+
+        private fun inspectApk(
+            packageName: String,
+            descriptor: ParcelFileDescriptor,
+            replyTo: Messenger?
+        ) {
             val responseData = Bundle().apply {
                 putInt(CveWorkerProtocol.KEY_PROCESS_ID, Process.myPid())
                 putInt(CveWorkerProtocol.KEY_WORKER_UID, Process.myUid())
@@ -66,7 +95,6 @@ class CveWorkerService : Service() {
 
             try {
                 require(packageName.isNotBlank()) { "Package name was missing." }
-                requireNotNull(descriptor) { "Read-only APK file descriptor was missing." }
                 val report = ParcelFileDescriptor.AutoCloseInputStream(descriptor).use {
                     CveApkArchiveInspector.inspect(it)
                 }
@@ -81,7 +109,7 @@ class CveWorkerService : Service() {
                     ArrayList(report.nativeAbis)
                 )
             } catch (error: Exception) {
-                runCatching { descriptor?.close() }
+                runCatching { descriptor.close() }
                 responseData.putBoolean(CveWorkerProtocol.KEY_SCAN_OK, false)
                 responseData.putString(
                     CveWorkerProtocol.KEY_ERROR,
@@ -92,7 +120,24 @@ class CveWorkerService : Service() {
             val response = Message.obtain(null, CveWorkerProtocol.MSG_APK_INSPECTED).apply {
                 data = responseData
             }
-            runCatching { message.replyTo?.send(response) }
+            runCatching { replyTo?.send(response) }
+        }
+
+        private fun sendInspectionFailure(
+            replyTo: Messenger?,
+            packageName: String,
+            reason: String
+        ) {
+            val response = Message.obtain(null, CveWorkerProtocol.MSG_APK_INSPECTED).apply {
+                data = Bundle().apply {
+                    putInt(CveWorkerProtocol.KEY_PROCESS_ID, Process.myPid())
+                    putInt(CveWorkerProtocol.KEY_WORKER_UID, Process.myUid())
+                    putString(CveWorkerProtocol.KEY_PACKAGE_NAME, packageName)
+                    putBoolean(CveWorkerProtocol.KEY_SCAN_OK, false)
+                    putString(CveWorkerProtocol.KEY_ERROR, reason)
+                }
+            }
+            runCatching { replyTo?.send(response) }
         }
     }
 }
