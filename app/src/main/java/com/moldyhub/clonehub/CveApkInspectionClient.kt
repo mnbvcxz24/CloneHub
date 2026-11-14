@@ -4,7 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
@@ -46,7 +45,6 @@ class CveApkInspectionClient(context: Context) {
             callback(Result.Failed("CloneHub cannot read the selected APK file."))
             return
         }
-
         val descriptor = try {
             ParcelFileDescriptor.open(apkFile, ParcelFileDescriptor.MODE_READ_ONLY)
         } catch (error: Exception) {
@@ -103,16 +101,24 @@ class CveApkInspectionClient(context: Context) {
                     finish(Result.Failed("Isolated worker connection was invalid."))
                     return
                 }
+                val transferredDescriptor = try {
+                    ParcelFileDescriptor.dup(descriptor.fileDescriptor)
+                } catch (error: Exception) {
+                    finish(Result.Failed(error.message ?: "Could not duplicate the APK descriptor."))
+                    return
+                }
                 val request = Message.obtain(null, CveWorkerProtocol.MSG_INSPECT_APK).apply {
                     replyTo = replyMessenger
                     data = android.os.Bundle().apply {
                         putString(CveWorkerProtocol.KEY_PACKAGE_NAME, packageName)
-                        putParcelable(CveWorkerProtocol.KEY_APK_FD, ParcelFileDescriptor.dup(descriptor.fileDescriptor))
+                        putParcelable(CveWorkerProtocol.KEY_APK_FD, transferredDescriptor)
                     }
                 }
                 try {
                     Messenger(binder).send(request)
+                    transferredDescriptor.close()
                 } catch (error: Exception) {
+                    runCatching { transferredDescriptor.close() }
                     finish(Result.Failed(error.message ?: "Could not send APK descriptor to worker."))
                 }
             }
@@ -133,7 +139,6 @@ class CveApkInspectionClient(context: Context) {
             connection,
             SystemClock.uptimeMillis() + timeoutMs
         )
-
         try {
             bound = appContext.bindService(
                 Intent(appContext, CveWorkerService::class.java),
