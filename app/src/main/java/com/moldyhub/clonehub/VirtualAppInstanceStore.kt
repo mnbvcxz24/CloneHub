@@ -39,11 +39,11 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
     }
 
     @Synchronized
-    fun create(packageName: String, displayName: String): VirtualAppInstance {
+    fun create(packageName: String, displayName: String, apkSetVersionCode: Long? = null): VirtualAppInstance {
         val directoryName = "instance_${java.util.UUID.randomUUID()}"
         val instance = VirtualAppInstance.create(
             packageName = packageName,
-            configuration = VirtualAppConfiguration(displayName, directoryName)
+            configuration = VirtualAppConfiguration(displayName, directoryName, apkSetVersionCode)
         )
         val directory = File(rootDirectory, directoryName)
         check(directory.mkdirs() || directory.isDirectory) { "Could not create instance profile directory" }
@@ -79,11 +79,12 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
                     val item = array.getJSONObject(index)
                     val displayName = item.optString("displayName").takeIf { it.isNotBlank() }
                     val directoryName = item.optString("dataDirectoryName").takeIf { it.isNotBlank() }
+                    val apkSetVersionCode = if (item.has("apkSetVersionCode") && !item.isNull("apkSetVersionCode")) item.getLong("apkSetVersionCode") else null
                     add(VirtualAppInstance(
                         instanceId = item.getString("instanceId"),
                         packageName = item.getString("packageName"),
                         state = InstanceState.valueOf(item.getString("state")),
-                        configuration = VirtualAppConfiguration(displayName, directoryName)
+                        configuration = VirtualAppConfiguration(displayName, directoryName, apkSetVersionCode)
                     ))
                 }
             }
@@ -123,7 +124,8 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
                 .put("packageName", instance.packageName)
                 .put("state", instance.state.name)
                 .put("displayName", instance.configuration.displayName ?: "")
-                .put("dataDirectoryName", instance.configuration.dataDirectoryName ?: ""))
+                .put("dataDirectoryName", instance.configuration.dataDirectoryName ?: "")
+                .put("apkSetVersionCode", instance.configuration.apkSetVersionCode ?: JSONObject.NULL))
         }
         check(preferences.edit().putString(KEY_INSTANCES, array.toString()).commit()) {
             "Could not save instance profiles"
