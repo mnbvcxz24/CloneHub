@@ -11,23 +11,28 @@ import android.os.Message
 import android.os.Messenger
 import android.os.ParcelFileDescriptor
 import android.os.Process
-import java.io.File
-import java.util.zip.ZipException
+import java.util.concurrent.Executors
 
 /**
  * Runs under Android's isolated UID. It answers handshakes and performs read-only
  * APK archive inspection only; it never loads or executes target-app code.
  */
 class CveWorkerService : Service() {
+    private val workerExecutor = Executors.newSingleThreadExecutor()
     private val messenger by lazy { Messenger(WorkerHandler()) }
 
     override fun onBind(intent: Intent?): IBinder = messenger.binder
+
+    override fun onDestroy() {
+        workerExecutor.shutdownNow()
+        super.onDestroy()
+    }
 
     private inner class WorkerHandler : Handler(Looper.getMainLooper()) {
         override fun handleMessage(message: Message) {
             when (message.what) {
                 CveWorkerProtocol.MSG_PING -> replyHandshake(message)
-                CveWorkerProtocol.MSG_INSPECT_APK -> inspectApk(message)
+                CveWorkerProtocol.MSG_INSPECT_APK -> workerExecutor.execute { inspectApk(message) }
                 else -> super.handleMessage(message)
             }
         }
@@ -63,7 +68,7 @@ class CveWorkerService : Service() {
                 require(packageName.isNotBlank()) { "Package name was missing." }
                 requireNotNull(descriptor) { "Read-only APK file descriptor was missing." }
                 val report = ParcelFileDescriptor.AutoCloseInputStream(descriptor).use {
-                    CveApkArchiveInspector.inspect(it, cacheDir)
+                    CveApkArchiveInspector.inspect(it)
                 }
                 responseData.putBoolean(CveWorkerProtocol.KEY_SCAN_OK, true)
                 responseData.putString(CveWorkerProtocol.KEY_SHA256, report.sha256)
