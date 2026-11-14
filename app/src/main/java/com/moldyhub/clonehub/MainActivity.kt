@@ -168,7 +168,7 @@ class MainActivity : Activity() {
                 is CveWorkerClient.Result.Ready -> {
                     val handshake = result.handshake
                     workerStatusText.text =
-                        "ONLINE • PID ${handshake.processId} • UID ${handshake.workerUid} • separate from host UID ${android.os.Process.myUid()}"
+                        "ONLINE • PID ${handshake.processId} • UID ${handshake.workerUid} • API ${handshake.deviceSdkInt} • ABI ${handshake.supportedAbis.joinToString()} • separate from host UID ${android.os.Process.myUid()}"
                     Toast.makeText(this, "CVE isolated worker verified.", Toast.LENGTH_SHORT).show()
                 }
                 is CveWorkerClient.Result.Failed -> {
