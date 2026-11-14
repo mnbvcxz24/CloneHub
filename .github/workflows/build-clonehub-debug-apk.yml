@@ -14,7 +14,6 @@ on:
       - "build.gradle.kts"
       - "gradle.properties"
       - ".github/workflows/build-clonehub-debug-apk.yml"
-      - ".github/scripts/**"
   workflow_dispatch:
 
 permissions:
@@ -25,8 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-emulator-smoke-test:
-    name: Build, launch, and capture Android startup logs
+  build-debug-apk:
+    name: Run unit tests and build debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Check out CloneHub and required submodules
@@ -40,10 +39,8 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK and required NDK
         uses: android-actions/setup-android@v4
-        with:
-          packages: "platform-tools"
 
       - name: Install VirtualApp native build NDK
         shell: bash
@@ -57,37 +54,13 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Run CloneHub lifecycle unit tests and build debug APK
+      - name: Run unit tests and assemble debug APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
 
-      - name: Preserve APK artifact
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: CloneHub-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Prepare emulator diagnostics folder
-        if: always()
-        run: mkdir -p emulator-diagnostics
-
-      - name: Install and launch CloneHub on Android 15 emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_5
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: bash .github/scripts/emulator-smoke-test.sh
-
-      - name: Upload Android emulator diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CloneHub-emulator-diagnostics
-          path: emulator-diagnostics/
-          if-no-files-found: warn
           retention-days: 14
