@@ -95,7 +95,7 @@ class AppPackageInspector(private val packageManager: PackageManager) {
             }.distinct()
 
             val permissionNames = packageInfo.requestedPermissions.orEmpty()
-            val permissionFlags = packageInfo.requestedPermissionsFlags.orEmpty()
+            val permissionFlags = packageInfo.requestedPermissionsFlags ?: intArrayOf()
             val permissions = permissionNames.mapIndexed { index, name ->
                 AppPermissionDescriptor(
                     name = name,
