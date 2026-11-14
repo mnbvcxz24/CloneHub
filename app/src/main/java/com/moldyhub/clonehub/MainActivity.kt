@@ -71,7 +71,7 @@ class MainActivity : Activity() {
         content.addView(buildSectionHeader("YOUR INSTANCES", "Manage your app spaces"), margins(top = 24, bottom = 10))
 
         instanceCountText = TextView(this).apply {
-            text = "0 / 3"
+            text = "0 profiles"
             textSize = 12f
             setTextColor(Color.rgb(178, 168, 255))
             typeface = Typeface.DEFAULT_BOLD
@@ -208,7 +208,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(18), 0, 0)
         }
-        stats.addView(statTile("3", "STARTER SLOTS"), LinearLayout.LayoutParams(0, dp(66), 1f))
+        stats.addView(statTile("3", "STARTER SLOTS / APP"), LinearLayout.LayoutParams(0, dp(66), 1f))
         stats.addView(View(this).apply { setBackgroundColor(Color.rgb(62, 65, 91)) },
             LinearLayout.LayoutParams(dp(1), dp(42)).apply {
                 gravity = Gravity.CENTER_VERTICAL
@@ -383,7 +383,7 @@ class MainActivity : Activity() {
                 instancesContainer.addView(instanceCard(app, instance), cardMargins())
             }
         }
-        instanceCountText.text = "${total} / 3"
+        instanceCountText.text = "${total} profiles"
         if (total == 0) {
             instancesContainer.addView(emptyCard("No instances yet. Add an app to your library, then create its first instance."))
         }
