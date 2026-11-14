@@ -31,7 +31,7 @@ class CveApkInspectionClient(context: Context) {
     fun inspect(
         packageName: String,
         apkPath: String,
-        timeoutMs: Long = 30_000L,
+        timeoutMs: Long = 180_000L,
         callback: (Result) -> Unit
     ) {
         if (packageName.isBlank() || apkPath.isBlank()) {
