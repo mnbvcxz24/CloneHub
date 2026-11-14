@@ -1,4 +1,4 @@
-# ShitJumpingVM
+# CloneHub
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
@@ -27,7 +27,7 @@
 
 ## What it is
 
-ShitJumpingVM is a fork and rename of NEXTVM. It does not emulate hardware and
+CloneHub uses the ShitJumpingVM virtualization engine (by woand), itself a fork and rename of NEXTVM. It does not emulate hardware and
 does not modify the OS. A guest app runs as an ordinary app process, but its
 Binder IPC, activity launches, class loading, and file paths are intercepted
 and redirected into a per-instance sandbox, so the guest sees its own data
@@ -38,7 +38,7 @@ The project is experimental and under active development
 controlled runtime diagnostics: getting real apps to boot and run inside the
 sandbox, and finding out exactly where they diverge from running normally.
 
-> Note on naming: the repository and project are now ShitJumpingVM, but the
+> Note on naming: the repository and project are now CloneHub, but the
 > host app's `applicationId` / namespace is still `com.nextvm.app` — renaming
 > it was not part of the fork, so you will still see `com.nextvm` in code,
 > package names, and on-device paths.
@@ -124,7 +124,7 @@ matter when diagnosing compatibility problems.
 `settings.gradle.kts`.
 
 ```
-ShitJumpingVM/
+CloneHub/
 ├── app/                          # Host entry: NextVmApplication, MainActivity,
 │                                 # stub components (StubComponents.kt), Hilt DI
 ├── core/
@@ -227,8 +227,8 @@ Totals: 80 Activities, 40 Services, 25 ContentProviders, 15 Receivers.
 
 ```bash
 # Clone the repository
-git clone https://github.com/woand/ShitJumpingVM.git
-cd ShitJumpingVM
+git clone https://github.com/mnbvcxz24/CloneHub.git
+cd CloneHub
 
 # Build debug APK
 ./gradlew :app:assembleDebug
@@ -241,8 +241,7 @@ The host app is a debug build signed with the project's debug keystore;
 `minSdk 26`, `targetSdk 35`, Kotlin 2.0.21, Compose BOM 2024.12.01,
 Hilt 2.53.1.
 
-> Note: ShitJumpingVM is a fork of NEXTVM
-> (upstream: `https://github.com/TanvirHossain2/NEXTVM`). The original
+> Note: CloneHub incorporates the ShitJumpingVM engine by woand (`https://github.com/woand/ShitJumpingVM`), which is itself derived from NEXTVM (`https://github.com/TanvirHossain2/NEXTVM`). Original Apache-2.0 licensing and notices are retained. The original
 > NEXTVM README's feature lists, roadmap, and comparison tables were
 > aspirational and did not match this codebase; they were removed in this
 > rewrite rather than carried over.
@@ -279,7 +278,7 @@ To contribute:
 
 ## Disclaimer
 
-ShitJumpingVM is built for legitimate compatibility and diagnostics work:
+CloneHub is built for legitimate compatibility and diagnostics work:
 running apps in isolation, testing them across configurations, and
 analyzing runtime behavior in a controlled environment. Users are
 responsible for complying with applicable laws and with the terms of
