@@ -48,7 +48,7 @@ class ApkArchiveInspectorTest {
         val root = Files.createTempDirectory("clonehub-apk-inspect").toFile()
         try {
             val apk = File(root, "not-an-apk.apk")
-            writeApk(apk, listOf("classes.dex"))
+            writeApk(apk, listOf("classes.dex"), includeManifest = false)
             val result = ApkArchiveInspector.inspect(listOf(apk), listOf("arm64-v8a"))
             assertTrue(result is ApkInspectionResult.Failure)
         } finally {
@@ -56,9 +56,9 @@ class ApkArchiveInspectorTest {
         }
     }
 
-    private fun writeApk(file: File, entries: List<String>) {
+    private fun writeApk(file: File, entries: List<String>, includeManifest: Boolean = true) {
         ZipOutputStream(file.outputStream()).use { zip ->
-            (listOf("AndroidManifest.xml") + entries).forEach { name ->
+            ((if (includeManifest) listOf("AndroidManifest.xml") else emptyList()) + entries).forEach { name ->
                 zip.putNextEntry(ZipEntry(name))
                 zip.write(byteArrayOf(1, 2, 3))
                 zip.closeEntry()
