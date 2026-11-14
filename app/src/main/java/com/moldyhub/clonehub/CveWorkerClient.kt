@@ -11,7 +11,7 @@ import android.os.Message
 import android.os.Messenger
 import android.os.Process
 
-/** Asynchronously verifies that the isolated CVE worker can start and answer IPC. */
+/** Asynchronously verifies the isolated worker and reads basic device capabilities. */
 class CveWorkerClient(context: Context) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -45,12 +45,17 @@ class CveWorkerClient(context: Context) {
             val handshake = CveWorkerHandshake(
                 protocolVersion = message.arg1,
                 processId = message.data.getInt(CveWorkerProtocol.KEY_PROCESS_ID, -1),
-                workerUid = message.arg2
+                workerUid = message.arg2,
+                deviceSdkInt = message.data.getInt(CveWorkerProtocol.KEY_DEVICE_SDK, -1),
+                supportedAbis = message.data
+                    .getStringArray(CveWorkerProtocol.KEY_SUPPORTED_ABIS)
+                    ?.toList()
+                    ?: emptyList()
             )
             if (handshake.isIsolatedFrom(Process.myUid())) {
                 finish(Result.Ready(handshake))
             } else {
-                finish(Result.Failed("Worker responded, but its isolated UID could not be verified."))
+                finish(Result.Failed("Worker responded, but isolation or device capabilities could not be verified."))
             }
             true
         })
