@@ -1,9 +1,10 @@
 package com.moldyhub.clonehub
 
-import java.io.File
+import java.io.FilterInputStream
 import java.io.InputStream
+import java.security.DigestInputStream
 import java.security.MessageDigest
-import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 
 data class CveApkInspectionReport(
     val sha256: String,
@@ -15,59 +16,69 @@ data class CveApkInspectionReport(
 )
 
 object CveApkArchiveInspector {
-    fun inspect(
-        input: InputStream,
-        tempDirectory: File = File(System.getProperty("java.io.tmpdir") ?: ".")
-    ): CveApkInspectionReport {
-        require(tempDirectory.exists() || tempDirectory.mkdirs()) {
-            "Worker temporary directory is unavailable."
-        }
-        val tempApk = File.createTempFile("clonehub-apk-", ".tmp", tempDirectory)
-        try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            var bytesRead = 0L
-            tempApk.outputStream().buffered().use { output ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (count == 0) continue
-                    digest.update(buffer, 0, count)
-                    output.write(buffer, 0, count)
-                    bytesRead += count
-                }
-            }
+    /** Scans a seek-free APK descriptor stream without writing into app-private storage. */
+    fun inspect(input: InputStream): CveApkInspectionReport {
+        val counter = CountingInputStream(input)
+        val digest = MessageDigest.getInstance("SHA-256")
+        val digestInput = DigestInputStream(counter, digest)
+        val zip = ZipInputStream(digestInput)
+        var entryCount = 0
+        var hasManifest = false
+        var dexFileCount = 0
+        val abis = linkedSetOf<String>()
+        val buffer = ByteArray(32 * 1024)
 
-            var entryCount = 0
-            var hasManifest = false
-            var dexFileCount = 0
-            val abis = linkedSetOf<String>()
-            ZipFile(tempApk).use { zip ->
-                val entries = zip.entries()
-                while (entries.hasMoreElements()) {
-                    val name = entries.nextElement().name
-                    entryCount++
-                    when {
-                        name == "AndroidManifest.xml" -> hasManifest = true
-                        name.matches(Regex("classes(\\d*)\\.dex")) -> dexFileCount++
-                        name.startsWith("lib/") -> {
-                            val parts = name.split('/')
-                            if (parts.size >= 3 && parts[1].isNotBlank()) abis.add(parts[1])
-                        }
+        try {
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entryCount++
+                when {
+                    entry.name == "AndroidManifest.xml" -> hasManifest = true
+                    entry.name.matches(Regex("classes(\\d*)\\.dex")) -> dexFileCount++
+                    entry.name.startsWith("lib/") -> {
+                        val parts = entry.name.split('/')
+                        if (parts.size >= 3 && parts[1].isNotBlank()) abis.add(parts[1])
                     }
                 }
+                while (zip.read(buffer) != -1) {
+                    // Drain each compressed entry; no APK code is loaded or executed.
+                }
+                zip.closeEntry()
             }
 
-            return CveApkInspectionReport(
-                sha256 = digest.digest().joinToString("") { "%02x".format(it) },
-                bytesRead = bytesRead,
-                entryCount = entryCount,
-                hasManifest = hasManifest,
-                dexFileCount = dexFileCount,
-                nativeAbis = abis.sorted()
-            )
+            // ZipInputStream stops at the central directory. Drain the remaining raw
+            // bytes so the digest and byte count cover the complete APK file.
+            while (digestInput.read(buffer) != -1) {
+                // Hash remaining ZIP directory and end-of-central-directory records.
+            }
         } finally {
-            tempApk.delete()
+            runCatching { zip.close() }
+        }
+
+        return CveApkInspectionReport(
+            sha256 = digest.digest().joinToString("") { "%02x".format(it) },
+            bytesRead = counter.bytesRead,
+            entryCount = entryCount,
+            hasManifest = hasManifest,
+            dexFileCount = dexFileCount,
+            nativeAbis = abis.sorted()
+        )
+    }
+
+    private class CountingInputStream(input: InputStream) : FilterInputStream(input) {
+        var bytesRead: Long = 0
+            private set
+
+        override fun read(): Int {
+            val value = super.read()
+            if (value >= 0) bytesRead++
+            return value
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val count = super.read(buffer, offset, length)
+            if (count > 0) bytesRead += count
+            return count
         }
     }
 }
