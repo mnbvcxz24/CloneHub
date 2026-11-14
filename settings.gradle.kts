@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NEXTVM"
+rootProject.name = "CloneHub"
 
 // App module
 include(":app")
