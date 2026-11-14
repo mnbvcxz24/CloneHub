@@ -42,12 +42,12 @@ object CveApkArchiveInspector {
 
         val eocd = tail.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         eocd.position(eocdIndex)
-        val diskNumber = eocd.getShort(4).toInt() and 0xffff
-        val centralDisk = eocd.getShort(6).toInt() and 0xffff
-        val entriesOnDisk = eocd.getShort(8).toInt() and 0xffff
-        val totalEntries = eocd.getShort(10).toInt() and 0xffff
-        val centralSize = eocd.getInt(12).toLong() and 0xffffffffL
-        val centralOffset = eocd.getInt(16).toLong() and 0xffffffffL
+        val diskNumber = eocd.getShort(eocdIndex + 4).toInt() and 0xffff
+        val centralDisk = eocd.getShort(eocdIndex + 6).toInt() and 0xffff
+        val entriesOnDisk = eocd.getShort(eocdIndex + 8).toInt() and 0xffff
+        val totalEntries = eocd.getShort(eocdIndex + 10).toInt() and 0xffff
+        val centralSize = eocd.getInt(eocdIndex + 12).toLong() and 0xffffffffL
+        val centralOffset = eocd.getInt(eocdIndex + 16).toLong() and 0xffffffffL
 
         require(diskNumber == 0 && centralDisk == 0 && entriesOnDisk == totalEntries) {
             "Multi-disk ZIP archives are not supported."
