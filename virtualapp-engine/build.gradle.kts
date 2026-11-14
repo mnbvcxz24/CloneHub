@@ -48,6 +48,6 @@ dependencies {
     }
     implementation("me.weishu:free_reflection:3.0.1")
     implementation("me.weishu:epic:0.11.1")
-    implementation("me.weishu.exposed:exposed-xposedapi:0.4.6")
+    implementation("me.weishu.exposed:exposed-xposedapi:0.4.5")
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
 }

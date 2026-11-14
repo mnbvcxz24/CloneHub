@@ -11,8 +11,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // VirtualApp's legacy Xposed support artifacts were originally published to JCenter.
-        // Use maintained mirrors because JCenter itself is retired.
+        // Mirrors for the legacy, open-source VirtualApp build dependencies.
+        maven { url = uri("https://artifactory.appodeal.com/appodeal-public/") }
+        maven { url = uri("https://verve.jfrog.io/artifactory/verve-gradle-release/") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://maven.aliyun.com/repository/jcenter") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
