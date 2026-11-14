@@ -4,14 +4,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.nio.channels.FileChannel
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class CveApkArchiveInspectorTest {
     @Test
-    fun scansApkArchiveEntriesAndNativeAbis() {
+    fun scansApkCentralDirectoryAndNativeAbisWithoutInflatingEntries() {
         val bytes = createArchive(
             "AndroidManifest.xml",
             "classes.dex",
@@ -21,7 +23,7 @@ class CveApkArchiveInspectorTest {
             "resources.arsc"
         )
 
-        val result = CveApkArchiveInspector.inspect(ByteArrayInputStream(bytes))
+        val result = inspectBytes(bytes)
 
         assertTrue(result.hasManifest)
         assertEquals(2, result.dexFileCount)
@@ -33,12 +35,22 @@ class CveApkArchiveInspectorTest {
 
     @Test
     fun reportsArchiveWithoutManifest() {
-        val result = CveApkArchiveInspector.inspect(
-            ByteArrayInputStream(createArchive("assets/data.bin"))
-        )
+        val result = inspectBytes(createArchive("assets/data.bin"))
         assertFalse(result.hasManifest)
         assertEquals(0, result.dexFileCount)
         assertTrue(result.nativeAbis.isEmpty())
+    }
+
+    private fun inspectBytes(bytes: ByteArray): CveApkInspectionReport {
+        val file = Files.createTempFile("clonehub-apk-test", ".apk")
+        try {
+            Files.write(file, bytes)
+            FileChannel.open(file, StandardOpenOption.READ).use { channel ->
+                return CveApkArchiveInspector.inspect(channel)
+            }
+        } finally {
+            Files.deleteIfExists(file)
+        }
     }
 
     private fun createArchive(vararg names: String): ByteArray {
