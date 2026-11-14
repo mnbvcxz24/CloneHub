@@ -79,7 +79,7 @@ class VirtualAppLifecycleControllerTest {
     private class FakeRuntime(
         private val startResult: RuntimeOperationResult,
         private val stopResult: RuntimeOperationResult = RuntimeOperationResult.Failure("not configured")
-    ) : VirtualAppRuntime {
+    ) : InstanceRuntimeBackend {
         override fun start(instance: VirtualAppInstance): RuntimeOperationResult = startResult
         override fun stop(instance: VirtualAppInstance): RuntimeOperationResult = stopResult
     }

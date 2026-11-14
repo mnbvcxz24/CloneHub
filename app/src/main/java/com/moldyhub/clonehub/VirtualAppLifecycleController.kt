@@ -3,7 +3,7 @@ package com.moldyhub.clonehub
 import com.moldyhub.clonehub.cve.InstanceState
 import com.moldyhub.clonehub.cve.VirtualAppInstance
 
-interface VirtualAppRuntime {
+interface InstanceRuntimeBackend {
     fun start(instance: VirtualAppInstance): RuntimeOperationResult
     fun stop(instance: VirtualAppInstance): RuntimeOperationResult
 }
@@ -30,7 +30,7 @@ sealed class InstanceLifecycleResult {
 
 class VirtualAppLifecycleController(
     private val store: VirtualAppInstanceRepository,
-    private val runtime: VirtualAppRuntime
+    private val runtime: InstanceRuntimeBackend
 ) {
     @Synchronized
     fun start(instanceId: String): InstanceLifecycleResult {
@@ -82,7 +82,7 @@ class PreparedApkSetRuntime(
     private val planner: RuntimeLaunchPlanner,
     private val deviceSdkInt: Int,
     private val supportedAbis: List<String>
-) : VirtualAppRuntime {
+) : InstanceRuntimeBackend {
     override fun start(instance: VirtualAppInstance): RuntimeOperationResult =
         when (val result = planner.createPlan(instance, deviceSdkInt, supportedAbis)) {
             is RuntimeLaunchPlanningResult.Ready -> {
