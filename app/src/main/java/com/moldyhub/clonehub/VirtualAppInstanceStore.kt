@@ -4,6 +4,7 @@ import android.content.Context
 import com.moldyhub.clonehub.cve.InstanceState
 import com.moldyhub.clonehub.cve.VirtualAppConfiguration
 import com.moldyhub.clonehub.cve.VirtualAppInstance
+import com.moldyhub.clonehub.cve.VirtualInstanceStorageLayout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -17,6 +18,7 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
     private val preferences = context.getSharedPreferences("clonehub_instances", Context.MODE_PRIVATE)
     private val legacyPreferences = context.getSharedPreferences("clonehub_library", Context.MODE_PRIVATE)
     private val rootDirectory = File(context.filesDir, "instances")
+    private val storageLayout = VirtualInstanceStorageLayout(rootDirectory)
 
     @Synchronized
     fun getForPackage(packageName: String): List<VirtualAppInstance> =
@@ -45,8 +47,7 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
             packageName = packageName,
             configuration = VirtualAppConfiguration(displayName, directoryName, apkSetVersionCode)
         )
-        val directory = File(rootDirectory, directoryName)
-        check(directory.mkdirs() || directory.isDirectory) { "Could not create instance profile directory" }
+        storageLayout.prepare(instance)
         writeAll(readAll() + instance)
         return instance
     }
@@ -56,7 +57,7 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
         val current = readAll()
         val removed = current.firstOrNull { it.instanceId == instanceId } ?: return
         writeAll(current.filterNot { it.instanceId == instanceId })
-        removed.configuration.dataDirectoryName?.let { File(rootDirectory, it).deleteRecursively() }
+        storageLayout.delete(removed)
     }
 
     @Synchronized
@@ -65,7 +66,7 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
         val removed = current.filter { it.packageName == packageName }
         writeAll(current.filterNot { it.packageName == packageName })
         removed.forEach { instance ->
-            instance.configuration.dataDirectoryName?.let { File(rootDirectory, it).deleteRecursively() }
+            storageLayout.delete(instance)
         }
     }
 
@@ -106,8 +107,8 @@ class VirtualAppInstanceStore(context: Context) : VirtualAppInstanceRepository {
                     val instance = VirtualAppInstance.create(
                         packageName, VirtualAppConfiguration(label, directoryName)
                     )
-                    val directory = File(rootDirectory, directoryName)
-                    if (directory.mkdirs() || directory.isDirectory) migrated.add(instance)
+                    storageLayout.prepare(instance)
+                    migrated.add(instance)
                 } catch (_: IllegalArgumentException) {
                     // Ignore invalid legacy records rather than blocking startup.
                 }

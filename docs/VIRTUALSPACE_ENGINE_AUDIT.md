@@ -48,8 +48,10 @@ The following are implementation gaps, not merely missing UI:
 - Pending: obtain a complete upstream license grant before copying any source.
 
 ### Phase 1 - CloneHub runtime contracts
-- Define package-independent instance identity, APK-set metadata, guest process slots, lifecycle results, and per-instance storage paths.
-- Add unit tests for multiple instances of the same package and path isolation.
+- Completed: use instanceId as the storage identity, independent of packageName.
+- Completed: add a host-private per-instance directory layout for data, files, cache, code cache, databases, shared preferences, native libraries, and no-backup files.
+- Completed: add JVM tests for same-package storage separation, independent deletion, and path traversal rejection.
+- Pending: guest APK loading, Android API redirection, and process execution.
 - Keep the existing prepared-APK workflow and dashboard working.
 
 ### Phase 2 - Minimal guest loader
@@ -68,4 +70,4 @@ The following are implementation gaps, not merely missing UI:
 
 ## Current status
 
-This document is an audit and implementation plan only. It does not add a runtime backend or change the Alpha18 APK behavior.
+The audit document and Phase 1 storage-layout groundwork are committed. This does not add a guest APK loader, Android API redirection, or a runtime backend; Alpha18's execution behavior remains unavailable.
