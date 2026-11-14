@@ -29,8 +29,6 @@ class MainActivity : Activity() {
     private lateinit var installedContainer: LinearLayout
     private lateinit var workerStatusText: TextView
     private lateinit var workerTestButton: Button
-    private lateinit var workerInspectButton: Button
-    private lateinit var capabilityInspectButton: Button
 
     private val preferences by lazy {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
@@ -80,18 +78,6 @@ class MainActivity : Activity() {
             setOnClickListener { testCveWorker() }
         }
 
-        workerInspectButton = Button(this).apply {
-            text = "Inspect library app APK"
-            isAllCaps = false
-            setOnClickListener { chooseAppForInspection() }
-        }
-
-        capabilityInspectButton = Button(this).apply {
-            text = "Inspect app capabilities"
-            isAllCaps = false
-            setOnClickListener { chooseAppForCapabilityInspection() }
-        }
-
         val workerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -104,8 +90,6 @@ class MainActivity : Activity() {
             })
             addView(workerStatusText)
             addView(workerTestButton)
-            addView(workerInspectButton)
-            addView(capabilityInspectButton)
         }
 
         val libraryTitle = sectionTitle("My library")
@@ -181,152 +165,6 @@ class MainActivity : Activity() {
                     workerStatusText.text = "FAILED • ${result.reason}"
                     Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
                 }
-            }
-        }
-    }
-
-    private fun chooseAppForInspection() {
-        val packages = getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }
-        if (packages.isEmpty()) {
-            Toast.makeText(this, "Add an app to My library first.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val labels = packages.map { getAppLabel(it) }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Choose an app APK")
-            .setItems(labels) { _, which -> inspectLibraryApp(packages[which]) }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun inspectLibraryApp(appPackage: String) {
-        val descriptor = when (val result = AppPackageInspector(packageManager).inspect(appPackage)) {
-            is AppPackageInspectionResult.Success -> result.descriptor
-            is AppPackageInspectionResult.NotFound -> {
-                Toast.makeText(this, "The selected app is no longer installed.", Toast.LENGTH_LONG).show()
-                return
-            }
-            is AppPackageInspectionResult.Failed -> {
-                Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
-                return
-            }
-        }
-        val apkPaths = descriptor.apkPaths
-        if (apkPaths.isEmpty()) {
-            Toast.makeText(this, "No installed APK files were found.", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        workerInspectButton.isEnabled = false
-        workerInspectButton.text = "Inspecting APK set..."
-        val reports = mutableListOf<Pair<String, CveApkInspectionReport>>()
-        val client = CveApkInspectionClient(this)
-
-        fun inspectPart(index: Int) {
-            if (isFinishing || isDestroyed) return
-            if (index >= apkPaths.size) {
-                workerInspectButton.isEnabled = true
-                workerInspectButton.text = "Inspect library app APK"
-                workerStatusText.text = buildString {
-                    append("APK SET SCANNED IN ISOLATED WORKER")
-                    append("\nPackage: ${descriptor.packageName}")
-                    append("\nAPK parts inspected: ${reports.size} (base + ${(reports.size - 1).coerceAtLeast(0)} splits)")
-                    reports.forEachIndexed { partIndex, (partName, report) ->
-                        append("\n\n${if (partIndex == 0) "BASE APK" else "SPLIT APK $partIndex"}: $partName")
-                        append("\nBytes: ${report.bytesRead} • ZIP entries: ${report.entryCount}")
-                        append("\nManifest: ${if (report.hasManifest) "found" else "not found"} • DEX files: ${report.dexFileCount}")
-                        append("\nNative ABIs: ${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
-                        append("\nSHA-256: ${report.sha256}")
-                    }
-                    append("\n\nAll APK parts were inspected separately; this is archive validation, not app execution.")
-                }
-                Toast.makeText(this, "All ${reports.size} APK parts inspected.", Toast.LENGTH_LONG).show()
-                return
-            }
-
-            workerInspectButton.text = "Inspecting ${index + 1}/${apkPaths.size}..."
-            workerStatusText.text = "Scanning APK part ${index + 1} of ${apkPaths.size} in the isolated worker..."
-            client.inspect(appPackage, apkPaths[index]) { result ->
-                if (isFinishing || isDestroyed) return@inspect
-                when (result) {
-                    is CveApkInspectionClient.Result.Success -> {
-                        val partName = java.io.File(apkPaths[index]).name
-                        reports.add(partName to result.report)
-                        inspectPart(index + 1)
-                    }
-                    is CveApkInspectionClient.Result.Failed -> {
-                        workerInspectButton.isEnabled = true
-                        workerInspectButton.text = "Inspect library app APK"
-                        workerStatusText.text = "APK PART ${index + 1}/${apkPaths.size} FAILED • ${result.reason}"
-                        Toast.makeText(this, "Could not inspect APK part ${index + 1}: ${result.reason}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-
-        inspectPart(0)
-    }
-
-    private fun chooseAppForCapabilityInspection() {
-        val packages = getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }
-        if (packages.isEmpty()) {
-            Toast.makeText(this, "Add an app to My library first.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val labels = packages.map { getAppLabel(it) }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Inspect app capabilities")
-            .setItems(labels) { _, which -> inspectAppCapabilities(packages[which]) }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun inspectAppCapabilities(appPackage: String) {
-        capabilityInspectButton.isEnabled = false
-        capabilityInspectButton.text = "Inspecting..."
-        workerStatusText.text = "Reading package metadata and manifest-declared capabilities..."
-
-        val result = AppPackageInspector(packageManager).inspect(appPackage)
-        capabilityInspectButton.isEnabled = true
-        capabilityInspectButton.text = "Inspect app capabilities"
-
-        when (result) {
-            is AppPackageInspectionResult.Success -> {
-                val app = result.descriptor
-                val compatibility = AppCompatibilityEvaluator.evaluate(
-                    app = app,
-                    deviceApiLevel = android.os.Build.VERSION.SDK_INT,
-                    deviceSupportedAbis = android.os.Build.SUPPORTED_ABIS.toList()
-                )
-                val reportText = buildString {
-                    append("APP CAPABILITY REPORT")
-                    append("\\nPackage: ${app.packageName}")
-                    append("\\nApp: ${app.appLabel}")
-                    append("\\nVersion: ${app.versionName ?: "unknown"} (${app.versionCode})")
-                    append("\\nAndroid SDK: min ${app.minSdk} target ${app.targetSdk}")
-                    append("\\nLaunch activity: ${app.launchActivity ?: "not found"}")
-                    append("\\nAPK files: ${app.apkPaths.size} (splits: ${app.splitApkCount})")
-                    append("\\nNative ABIs: ${app.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
-                    append("\\n\\nPRELIMINARY DEVICE CHECK: ${if (compatibility.compatible) "No basic blocker detected" else "BLOCKED"}")
-                    if (compatibility.blockers.isNotEmpty()) {
-                        append("\\n\\nBlockers:\\n")
-                        append(compatibility.blockers.joinToString("\\n") { "• $it" })
-                    }
-                }
-                workerStatusText.text = "CAPABILITY INSPECTION COMPLETE • ${app.packageName}"
-                AlertDialog.Builder(this)
-                    .setTitle("App capability report")
-                    .setMessage(reportText)
-                    .setPositiveButton("Close", null)
-                    .show()
-            }
-            is AppPackageInspectionResult.NotFound -> {
-                workerStatusText.text = "APP NOT FOUND • ${result.packageName}"
-                Toast.makeText(this, "The selected app is no longer installed.", Toast.LENGTH_LONG).show()
-            }
-            is AppPackageInspectionResult.Failed -> {
-                workerStatusText.text = "CAPABILITY INSPECTION FAILED • ${result.reason}"
-                Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -432,7 +270,9 @@ class MainActivity : Activity() {
                         renderInstalledApps()
                     },
                     secondaryActionLabel = "Add instance",
-                    onSecondaryAction = { addInstance(app) }
+                    onSecondaryAction = { addInstance(app) },
+                    tertiaryActionLabel = "Prepare APK",
+                    onTertiaryAction = { prepareLibraryApp(appPackage) }
                 )
                 libraryContainer.addView(row, rowLayoutParams())
             }
@@ -468,6 +308,34 @@ class MainActivity : Activity() {
         if (instanceCount == 0) {
             instancesContainer.addView(emptyMessage("No instances created yet. Add an instance from an app in My library."))
         }
+    }
+
+    private fun prepareLibraryApp(appPackage: String) {
+        workerStatusText.text = "Preparing installed APK files for $appPackage..."
+        Thread {
+            val result = ApkSetPreparer(this).prepare(appPackage)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when (result) {
+                    is ApkPreparationResult.Success -> {
+                        val set = result.apkSet
+                        val sizeMb = set.totalBytes / (1024.0 * 1024.0)
+                        workerStatusText.text =
+                            "APK SET READY • ${set.apkFiles.size} file(s) • %.1f MB • version ${set.versionCode}".format(sizeMb)
+                        val verb = if (result.alreadyPrepared) "already prepared" else "prepared"
+                        Toast.makeText(
+                            this,
+                            "${getAppLabel(appPackage)} APK set $verb.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    is ApkPreparationResult.Failure -> {
+                        workerStatusText.text = "APK PREPARATION FAILED • ${result.reason}"
+                        Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }.start()
     }
 
     private fun addInstance(app: InstalledApp) {
@@ -571,7 +439,9 @@ class MainActivity : Activity() {
         actionLabel: String,
         onAction: () -> Unit,
         secondaryActionLabel: String? = null,
-        onSecondaryAction: (() -> Unit)? = null
+        onSecondaryAction: (() -> Unit)? = null,
+        tertiaryActionLabel: String? = null,
+        onTertiaryAction: (() -> Unit)? = null
     ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -613,13 +483,19 @@ class MainActivity : Activity() {
                 isEnabled = actionLabel != "Added"
                 setOnClickListener { onAction() }
             }
+            if (tertiaryActionLabel != null && onTertiaryAction != null) {
+                addView(Button(this@MainActivity).apply {
+                    text = tertiaryActionLabel
+                    isAllCaps = false
+                    setOnClickListener { onTertiaryAction() }
+                })
+            }
             if (secondaryActionLabel != null && onSecondaryAction != null) {
-                val secondaryAction = Button(this@MainActivity).apply {
+                addView(Button(this@MainActivity).apply {
                     text = secondaryActionLabel
                     isAllCaps = false
                     setOnClickListener { onSecondaryAction() }
-                }
-                addView(secondaryAction)
+                })
             }
             addView(action)
         }
