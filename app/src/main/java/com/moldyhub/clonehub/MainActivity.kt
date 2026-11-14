@@ -1,6 +1,7 @@
 package com.moldyhub.clonehub
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -28,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var installedContainer: LinearLayout
     private lateinit var workerStatusText: TextView
     private lateinit var workerTestButton: Button
+    private lateinit var workerInspectButton: Button
 
     private val preferences by lazy {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
@@ -77,6 +79,12 @@ class MainActivity : Activity() {
             setOnClickListener { testCveWorker() }
         }
 
+        workerInspectButton = Button(this).apply {
+            text = "Inspect library app APK"
+            isAllCaps = false
+            setOnClickListener { chooseAppForInspection() }
+        }
+
         val workerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -89,6 +97,7 @@ class MainActivity : Activity() {
             })
             addView(workerStatusText)
             addView(workerTestButton)
+            addView(workerInspectButton)
         }
 
         val libraryTitle = sectionTitle("My library")
@@ -162,6 +171,60 @@ class MainActivity : Activity() {
                 }
                 is CveWorkerClient.Result.Failed -> {
                     workerStatusText.text = "FAILED • ${result.reason}"
+                    Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun chooseAppForInspection() {
+        val packages = getLibraryPackages().toList().sortedBy { getAppLabel(it).lowercase() }
+        if (packages.isEmpty()) {
+            Toast.makeText(this, "Add an app to My library first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = packages.map { getAppLabel(it) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Choose an app APK")
+            .setItems(labels) { _, which -> inspectLibraryApp(packages[which]) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun inspectLibraryApp(appPackage: String) {
+        workerInspectButton.isEnabled = false
+        workerInspectButton.text = "Inspecting APK..."
+        workerStatusText.text = "Opening APK read-only and sending its file descriptor to the isolated worker..."
+
+        val apkPath = try {
+            packageManager.getApplicationInfo(appPackage, 0).sourceDir
+        } catch (error: Exception) {
+            workerInspectButton.isEnabled = true
+            workerInspectButton.text = "Inspect library app APK"
+            workerStatusText.text = "FAILED • ${error.message ?: "Could not locate installed APK."}"
+            return
+        }
+
+        CveApkInspectionClient(this).inspect(appPackage, apkPath) { result ->
+            if (isFinishing || isDestroyed) return@inspect
+            workerInspectButton.isEnabled = true
+            workerInspectButton.text = "Inspect library app APK"
+            when (result) {
+                is CveApkInspectionClient.Result.Success -> {
+                    val report = result.report
+                    workerStatusText.text = buildString {
+                        append("APK SCANNED IN ISOLATED WORKER")
+                        append("\\nPackage: ${result.packageName}")
+                        append("\\nWorker PID: ${result.workerPid} • UID: ${result.workerUid}")
+                        append("\\nBytes: ${report.bytesRead} • ZIP entries: ${report.entryCount}")
+                        append("\\nManifest: ${if (report.hasManifest) "found" else "not found"} • DEX files: ${report.dexFileCount}")
+                        append("\\nNative ABIs: ${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
+                        append("\\nSHA-256: ${report.sha256}")
+                    }
+                    Toast.makeText(this, "APK archive inspected by isolated worker.", Toast.LENGTH_LONG).show()
+                }
+                is CveApkInspectionClient.Result.Failed -> {
+                    workerStatusText.text = "APK INSPECTION FAILED • ${result.reason}"
                     Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
                 }
             }
