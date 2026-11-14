@@ -99,9 +99,8 @@ class AppPackageInspector(private val packageManager: PackageManager) {
             val permissions = permissionNames.mapIndexed { index, name ->
                 AppPermissionDescriptor(
                     name = name,
-                    grantedOnHost = permissionFlags.getOrNull(index)?.and(
-                        PackageInfo.REQUESTED_PERMISSION_GRANTED
-                    ) != 0
+                    grantedOnHost = ((permissionFlags.getOrNull(index) ?: 0) and
+                        PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
                 )
             }
 
