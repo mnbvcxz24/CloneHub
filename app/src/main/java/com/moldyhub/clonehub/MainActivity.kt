@@ -200,43 +200,71 @@ class MainActivity : Activity() {
     }
 
     private fun inspectLibraryApp(appPackage: String) {
-        workerInspectButton.isEnabled = false
-        workerInspectButton.text = "Inspecting APK..."
-        workerStatusText.text = "Opening APK read-only and sending its file descriptor to the isolated worker..."
-
-        val apkPath = try {
-            packageManager.getApplicationInfo(appPackage, 0).sourceDir
-        } catch (error: Exception) {
-            workerInspectButton.isEnabled = true
-            workerInspectButton.text = "Inspect library app APK"
-            workerStatusText.text = "FAILED • ${error.message ?: "Could not locate installed APK."}"
+        val descriptor = when (val result = AppPackageInspector(packageManager).inspect(appPackage)) {
+            is AppPackageInspectionResult.Success -> result.descriptor
+            is AppPackageInspectionResult.NotFound -> {
+                Toast.makeText(this, "The selected app is no longer installed.", Toast.LENGTH_LONG).show()
+                return
+            }
+            is AppPackageInspectionResult.Failed -> {
+                Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+        val apkPaths = descriptor.apkPaths
+        if (apkPaths.isEmpty()) {
+            Toast.makeText(this, "No installed APK files were found.", Toast.LENGTH_LONG).show()
             return
         }
 
-        CveApkInspectionClient(this).inspect(appPackage, apkPath) { result ->
-            if (isFinishing || isDestroyed) return@inspect
-            workerInspectButton.isEnabled = true
-            workerInspectButton.text = "Inspect library app APK"
-            when (result) {
-                is CveApkInspectionClient.Result.Success -> {
-                    val report = result.report
-                    workerStatusText.text = buildString {
-                        append("APK SCANNED IN ISOLATED WORKER")
-                        append("\nPackage: ${result.packageName}")
-                        append("\nWorker PID: ${result.workerPid} • UID: ${result.workerUid}")
-                        append("\nBytes: ${report.bytesRead} • ZIP entries: ${report.entryCount}")
-                        append("\nManifest: ${if (report.hasManifest) "found" else "not found"} • DEX files: ${report.dexFileCount}")
-                        append("\nNative ABIs: ${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
-                        append("\nSHA-256: ${report.sha256}")
+        workerInspectButton.isEnabled = false
+        workerInspectButton.text = "Inspecting APK set..."
+        val reports = mutableListOf<Pair<String, CveApkInspectionReport>>()
+        val client = CveApkInspectionClient(this)
+
+        fun inspectPart(index: Int) {
+            if (isFinishing || isDestroyed) return
+            if (index >= apkPaths.size) {
+                workerInspectButton.isEnabled = true
+                workerInspectButton.text = "Inspect library app APK"
+                workerStatusText.text = buildString {
+                    append("APK SET SCANNED IN ISOLATED WORKER")
+                    append("\nPackage: \${descriptor.packageName}")
+                    append("\nAPK parts inspected: \${reports.size} (base + \${(reports.size - 1).coerceAtLeast(0)} splits)")
+                    reports.forEachIndexed { partIndex, (partName, report) ->
+                        append("\n\n\${if (partIndex == 0) "BASE APK" else "SPLIT APK $partIndex"}: $partName")
+                        append("\nBytes: \${report.bytesRead} • ZIP entries: \${report.entryCount}")
+                        append("\nManifest: \${if (report.hasManifest) "found" else "not found"} • DEX files: \${report.dexFileCount}")
+                        append("\nNative ABIs: \${report.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
+                        append("\nSHA-256: \${report.sha256}")
                     }
-                    Toast.makeText(this, "APK archive inspected by isolated worker.", Toast.LENGTH_LONG).show()
+                    append("\n\nAll APK parts were inspected separately; this is archive validation, not app execution.")
                 }
-                is CveApkInspectionClient.Result.Failed -> {
-                    workerStatusText.text = "APK INSPECTION FAILED • ${result.reason}"
-                    Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "All \${reports.size} APK parts inspected.", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            workerInspectButton.text = "Inspecting \${index + 1}/\${apkPaths.size}..."
+            workerStatusText.text = "Scanning APK part \${index + 1} of \${apkPaths.size} in the isolated worker..."
+            client.inspect(appPackage, apkPaths[index]) { result ->
+                if (isFinishing || isDestroyed) return@inspect
+                when (result) {
+                    is CveApkInspectionClient.Result.Success -> {
+                        val partName = java.io.File(apkPaths[index]).name
+                        reports.add(partName to result.report)
+                        inspectPart(index + 1)
+                    }
+                    is CveApkInspectionClient.Result.Failed -> {
+                        workerInspectButton.isEnabled = true
+                        workerInspectButton.text = "Inspect library app APK"
+                        workerStatusText.text = "APK PART \${index + 1}/\${apkPaths.size} FAILED • \${result.reason}"
+                        Toast.makeText(this, "Could not inspect APK part \${index + 1}: \${result.reason}", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
+
+        inspectPart(0)
     }
 
     private fun chooseAppForCapabilityInspection() {
