@@ -38,10 +38,10 @@ The project is experimental and under active development
 controlled runtime diagnostics: getting real apps to boot and run inside the
 sandbox, and finding out exactly where they diverge from running normally.
 
-> Note on naming: the repository and project are now CloneHub, but the
-> host app's `applicationId` / namespace is still `com.nextvm.app` — renaming
-> it was not part of the fork, so you will still see `com.nextvm` in code,
-> package names, and on-device paths.
+ > Android package note: the installed app keeps CloneHub's existing
+> `applicationId` (`com.moldyhub.clonehub`). The imported Kotlin source
+> namespace remains `com.nextvm.app`, so engine source packages and generated
+> `R` references continue to use `com.nextvm`.
 
 ---
 
