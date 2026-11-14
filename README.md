@@ -1,53 +1,29 @@
 # CloneHub
 
-A lightweight Android app-cloning project exploring an isolated, BlackBox-inspired virtual runtime.
+CloneHub now uses the upstream [ISEKHON/VirtualApp](https://github.com/ISEKHON/VirtualApp) Android virtualization application as its codebase.
 
-## V1 status: foundation
+The previous experimental CloneHub implementation has been removed. This repository no longer contains a separate custom cloning engine or GitHub Actions workflows.
 
-The first commit establishes the Android application shell and APK library.
+## Open the Android project
 
-### Included
-- Kotlin Android application using native Android Views
-- Android 8.0 (API 26) minimum
-- APK selection through the Android Storage Access Framework
-- Persisted document access where the provider supports it
-- Local imported-app list stored on-device
-- No root requirement for the library/import foundation
+The upstream project is included as a Git submodule at `third_party/VirtualApp`.
 
-### Not included yet
-- Virtual APK execution
-- Per-instance Android user/process isolation
-- Floating app windows or overlay controls
-- Delta Executor compatibility
+After cloning this repository, initialize the submodule:
 
-Imported APKs are currently catalogued only. CloneHub does not install, modify, or execute them in this version.
+```bash
+git submodule update --init --recursive
+```
 
-## Build
+Then open **`third_party/VirtualApp`** directly in Android Studio. Use the Gradle wrapper included by the upstream project.
 
-1. Open this repository in Android Studio.
-2. Use JDK 17.
-3. Allow Gradle to sync.
-4. Run the `app` configuration on an Android 8.0+ device or emulator.
+## Upstream project
 
-The project uses Android Gradle Plugin 8.7.3, Kotlin 2.0.21, and compile SDK 35.
+- Source: https://github.com/ISEKHON/VirtualApp
+- Pinned revision: `b3c634ad7941765df3da84a207aca94b7861afae`
+- License: Apache-2.0 (see the upstream `LICENSE` file)
 
-## Initial architecture direction
+## Important
 
-- **App shell:** Kotlin + native Android Views
-- **APK import:** Storage Access Framework
-- **Library metadata:** lightweight local preferences for V1
-- **Virtual runtime:** separate module to be designed and tested before integration
-- **Compatibility target:** ARM64 first
+VirtualApp is an actively developed and explicitly unstable project. Expect compatibility limitations and possible crashes. This repository adopts the upstream project as-is; it does not claim that the app has been built or verified on every device.
 
-## Roadmap
-
-1. [x] Android project and APK library foundation
-2. [ ] Inspect and prototype the isolated virtual runtime
-3. [ ] Verify storage and account-data isolation
-4. [ ] Add multiple virtual instances
-5. [ ] Add floating controls and investigate device-supported freeform windows
-6. [ ] Test compatibility with target apps
-
-## License
-
-Project code is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+Changes to the upstream engine should be made in the upstream submodule or in a deliberate fork, while preserving its license and attribution.
