@@ -26,6 +26,8 @@ class MainActivity : Activity() {
     private lateinit var libraryContainer: LinearLayout
     private lateinit var instancesContainer: LinearLayout
     private lateinit var installedContainer: LinearLayout
+    private lateinit var workerStatusText: TextView
+    private lateinit var workerTestButton: Button
 
     private val preferences by lazy {
         getSharedPreferences("clonehub_library", MODE_PRIVATE)
@@ -60,6 +62,33 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(0xFF666672.toInt())
             setPadding(0, dp(4), 0, dp(12))
+        }
+
+        workerStatusText = TextView(this).apply {
+            text = "Not tested yet"
+            textSize = 12f
+            setTextColor(0xFF666672.toInt())
+            setPadding(0, dp(4), 0, dp(8))
+        }
+
+        workerTestButton = Button(this).apply {
+            text = "Test worker"
+            isAllCaps = false
+            setOnClickListener { testCveWorker() }
+        }
+
+        val workerPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(0xFFFFFFFF.toInt())
+            addView(TextView(this@MainActivity).apply {
+                text = "CVE worker • isolated process"
+                textSize = 15f
+                setTextColor(0xFF202027.toInt())
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            })
+            addView(workerStatusText)
+            addView(workerTestButton)
         }
 
         val libraryTitle = sectionTitle("My library")
@@ -99,6 +128,7 @@ class MainActivity : Activity() {
 
         root.addView(title)
         root.addView(subtitle)
+        root.addView(workerPanel)
         root.addView(
             scrollView,
             LinearLayout.LayoutParams(
@@ -112,6 +142,30 @@ class MainActivity : Activity() {
         renderLibrary()
         renderInstances()
         renderInstalledApps()
+    }
+
+    private fun testCveWorker() {
+        workerTestButton.isEnabled = false
+        workerTestButton.text = "Testing..."
+        workerStatusText.text = "Starting the isolated CVE worker and checking IPC..."
+
+        CveWorkerClient(this).ping { result ->
+            if (isFinishing || isDestroyed) return@ping
+            workerTestButton.isEnabled = true
+            workerTestButton.text = "Test worker"
+            when (result) {
+                is CveWorkerClient.Result.Ready -> {
+                    val handshake = result.handshake
+                    workerStatusText.text =
+                        "ONLINE • PID ${handshake.processId} • UID ${handshake.workerUid} • separate from host UID ${android.os.Process.myUid()}"
+                    Toast.makeText(this, "CVE isolated worker verified.", Toast.LENGTH_SHORT).show()
+                }
+                is CveWorkerClient.Result.Failed -> {
+                    workerStatusText.text = "FAILED • ${result.reason}"
+                    Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun sectionTitle(value: String) = TextView(this).apply {
