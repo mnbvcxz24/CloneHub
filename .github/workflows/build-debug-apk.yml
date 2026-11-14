@@ -1,0 +1,52 @@
+name: Build VirtualApp Debug APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "third_party/VirtualApp"
+      - ".github/workflows/build-debug-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CloneHub and VirtualApp
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK packages
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;30.0.0" "ndk;21.4.7075529"
+          yes | sdkmanager --licenses
+
+      - name: Build VirtualApp debug APKs
+        working-directory: third_party/VirtualApp
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: VirtualApp-debug-apks
+          path: third_party/VirtualApp/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
