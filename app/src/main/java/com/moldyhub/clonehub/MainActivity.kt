@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -41,7 +42,14 @@ class MainActivity : Activity() {
 
     private val lifecycleController by lazy {
         val apkRoot = File(filesDir, "prepared_apks")
-        VirtualAppLifecycleController(instanceStore, PreparedApkSetRuntime(ApkSetResolver(apkRoot)))
+        val workspaceRoot = File(filesDir, "runtime_sessions")
+        val planner = RuntimeLaunchPlanner(ApkSetResolver(apkRoot), workspaceRoot)
+        val runtime = PreparedApkSetRuntime(
+            planner = planner,
+            deviceSdkInt = Build.VERSION.SDK_INT,
+            supportedAbis = Build.SUPPORTED_ABIS.toList()
+        )
+        VirtualAppLifecycleController(instanceStore, runtime)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
