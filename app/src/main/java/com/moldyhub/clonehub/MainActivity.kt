@@ -270,41 +270,20 @@ class MainActivity : Activity() {
                     deviceApiLevel = android.os.Build.VERSION.SDK_INT,
                     deviceSupportedAbis = android.os.Build.SUPPORTED_ABIS.toList()
                 )
-                val permissionLines = app.requestedPermissions
-                    .joinToString("\n") { permission ->
-                        "• ${permission.name} (host granted: ${permission.grantedOnHost})"
-                    }.ifBlank { "None declared" }
-                fun componentLines(items: List<AppComponentDescriptor>): String =
-                    items.joinToString("\n") {
-                        "• ${it.name} (exported: ${it.exported}, enabled: ${it.enabled})"
-                    }.ifBlank { "None declared" }
-
                 val reportText = buildString {
                     append("APP CAPABILITY REPORT")
-                    append("\nPackage: ${app.packageName}")
-                    append("\nApp: ${app.appLabel}")
-                    append("\nVersion: ${app.versionName ?: "unknown"} (${app.versionCode})")
-                    append("\nAndroid SDK: min ${app.minSdk} • target ${app.targetSdk}")
-                    append("\nLaunch activity: ${app.launchActivity ?: "not found"}")
-                    append("\nAPK files: ${app.apkPaths.size} (splits: ${app.splitApkCount})")
-                    append("\nNative ABIs: ${app.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
-                    append("\n\nPRELIMINARY DEVICE CHECK: ${if (compatibility.compatible) "No basic blocker detected" else "BLOCKED"}")
+                    append("\\nPackage: ${app.packageName}")
+                    append("\\nApp: ${app.appLabel}")
+                    append("\\nVersion: ${app.versionName ?: "unknown"} (${app.versionCode})")
+                    append("\\nAndroid SDK: min ${app.minSdk} target ${app.targetSdk}")
+                    append("\\nLaunch activity: ${app.launchActivity ?: "not found"}")
+                    append("\\nAPK files: ${app.apkPaths.size} (splits: ${app.splitApkCount})")
+                    append("\\nNative ABIs: ${app.nativeAbis.ifEmpty { listOf("none") }.joinToString()}")
+                    append("\\n\\nPRELIMINARY DEVICE CHECK: ${if (compatibility.compatible) "No basic blocker detected" else "BLOCKED"}")
                     if (compatibility.blockers.isNotEmpty()) {
-                        append("\n\nBlockers:\n")
-                        append(compatibility.blockers.joinToString("\n") { "• $it" })
+                        append("\\n\\nBlockers:\\n")
+                        append(compatibility.blockers.joinToString("\\n") { "• $it" })
                     }
-                    append("\n\nRequested permissions (${app.requestedPermissions.size}):\n")
-                    append(permissionLines)
-                    append("\n\nActivities (${app.activities.size}):\n")
-                    append(componentLines(app.activities))
-                    append("\n\nServices (${app.services.size}):\n")
-                    append(componentLines(app.services))
-                    append("\n\nReceivers (${app.receivers.size}):\n")
-                    append(componentLines(app.receivers))
-                    append("\n\nProviders (${app.providers.size}):\n")
-                    append(componentLines(app.providers))
-                    append("\n\nNotes:\n")
-                    append(compatibility.notes.joinToString("\n") { "• $it" })
                 }
                 workerStatusText.text = "CAPABILITY INSPECTION COMPLETE • ${app.packageName}"
                 AlertDialog.Builder(this)
