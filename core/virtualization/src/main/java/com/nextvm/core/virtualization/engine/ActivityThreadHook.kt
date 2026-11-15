@@ -499,6 +499,20 @@ class ActivityThreadHook(
                 ?: return false
             val processSlot = intent.getIntExtra("_nextvm_process_slot", 0)
 
+            // Start the guest-side launch witness before any reflection or classloader
+            // work. This makes early failures diagnosable even when the Activity never
+            // reaches onCreate().
+            runSafe(TAG) {
+                GuestBreadcrumb.begin(targetPackage)
+                engine.getDataDir(instanceId)?.let { dir ->
+                    GuestBreadcrumb.attachFile(File(dir, "files"))
+                }
+                GuestBreadcrumb.log(
+                    "launch intercept received pkg=$targetPackage activity=$rawTargetActivity " +
+                        "instance=$instanceId slot=$processSlot apkExists=" + File(apkPath).isFile
+                )
+            }
+
             // Resolve activity-aliases: if the target is an alias (no real class),
             // use the targetActivity (the real class it points to)
             val targetActivity = engine.resolveActivityAlias(targetPackage, rawTargetActivity)
@@ -601,23 +615,12 @@ class ActivityThreadHook(
             // Modify the Intent's component to point to the real Activity
             intent.component = ComponentName(targetPackage, targetActivity)
 
-            // === STEP 1.5 (v52): Begin the breadcrumb witness BEFORE
-            // the LoadedApk surgery below, and attach its file right
-            // away. The guest files dir is known from the instance data
-            // dir, so the log reaches disk even if this guest process
-            // dies seconds later. Previously the file was attached only
-            // on bind success (and the session itself was unicom-only),
-            // leaving failed binds of other guests with no witness.
-            runSafe(TAG) {
-                GuestBreadcrumb.begin(targetPackage)
-                val dataDir = engine.getDataDir(instanceId)
-                if (dataDir != null) {
-                    GuestBreadcrumb.attachFile(File(dataDir, "files"))
-                }
-            }
+            GuestBreadcrumb.log("activity metadata swapped target=$targetActivity")
 
             // === STEP 2: Replace ClassLoader in LoadedApk ===
+            GuestBreadcrumb.log("classloader replacement starting")
             replaceClassLoader(targetPackage, instanceId, apkPath)
+            GuestBreadcrumb.log("classloader replacement completed")
 
             // === STEP 2.1 (v79 probe): inspect the resource state of
             // the clone AOSP is about to consume for this launch ===
@@ -630,15 +633,18 @@ class ActivityThreadHook(
             // before the AppTab start). startApkWatchdog now also
             // restores the copy from its guard hard link. ===
             startApkWatchdog(instanceId, apkPath)
+            GuestBreadcrumb.log("APK watchdog started; launch resource probe completed")
 
             // === STEP 2.5: Boot guest Application lifecycle (CRITICAL) ===
             // Most Android apps require Application.onCreate() to run before any
             // Activity is created. Firebase, Hilt, WorkManager, AndroidX Startup
             // all initialize via Application or ContentProvider.onCreate().
             // We must boot the Application BEFORE the Activity is instantiated.
+            GuestBreadcrumb.log("guest Application boot starting")
             runSafe(TAG) {
                 engine.ensureGuestApplicationBooted(instanceId, targetPackage, apkPath)
             }
+            GuestBreadcrumb.log("guest Application boot call returned")
 
             // === STEP 3: Register pending resource injection ===
             // Resources and theme are injected via Instrumentation.callActivityOnCreate()
@@ -656,11 +662,16 @@ class ActivityThreadHook(
             // Hook Instrumentation.callActivityOnCreate to inject resources + context
             // BEFORE the Activity's own onCreate() runs
             hookInstrumentationIfNeeded()
+            GuestBreadcrumb.log(
+                "launch interception complete target=$targetActivity; " +
+                    "pending resource/context injection registered"
+            )
 
             Timber.tag(TAG).i("Class swap complete: $targetActivity (instance: $instanceId)")
             return false // Let the modified transaction proceed
 
         } catch (e: Exception) {
+            GuestBreadcrumb.logThrowable("LaunchActivityItem class swap FAILED", e)
             Timber.tag(TAG).e(e, "Error in LaunchActivityItem class swap")
             return false
         }
