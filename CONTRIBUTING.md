@@ -1,6 +1,6 @@
-# Contributing to CloneHub
+# Contributing to Fuku
 
-Thanks for helping improve CloneHub. Contributions can include code, testing, device compatibility reports, documentation, and clear bug reproductions.
+Thanks for helping improve Fuku. Contributions can include code, testing, device compatibility reports, documentation, and clear bug reproductions.
 
 This guide explains how to prepare a change and what information helps maintainers review it.
 
@@ -19,11 +19,11 @@ This guide explains how to prepare a change and what information helps maintaine
 
 ## Getting Started
 
-1. Fork the [CloneHub repository](https://github.com/mnbvcxz24/CloneHub).
+1. Fork the [Fuku repository](https://github.com/mnbvcxz24/Fuku).
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/CloneHub.git
-   cd CloneHub
+   git clone https://github.com/YOUR_USERNAME/Fuku.git
+   cd Fuku
    ```
 3. Create a branch for your work:
    ```bash
@@ -68,7 +68,7 @@ Use a physical Android device for meaningful virtualization testing. Emulator be
 
 ## Understanding the Project
 
-CloneHub is organized into the host application, core runtime modules, and feature modules.
+Fuku is organized into the host application, core runtime modules, and feature modules.
 
 ```text
 app/                    Host app, dependency injection, guest entry points
@@ -121,7 +121,7 @@ The implementation is the source of truth. Update this guide when module respons
 - Do not add undisclosed tracking or telemetry.
 - Do not commit secrets, tokens, signing credentials, or personal app data.
 - Do not claim support for an app or Android version without testing it.
-- Do not present upstream documentation or feature claims as CloneHub capabilities unless they have been verified in this codebase.
+- Do not present upstream documentation or feature claims as Fuku capabilities unless they have been verified in this codebase.
 
 ## Code Style
 
@@ -189,12 +189,12 @@ For a runtime or compatibility report, include:
 
 - **Device:** manufacturer and model.
 - **Android version:** include the API level if known.
-- **CloneHub version:** release or commit being tested.
+- **Fuku version:** release or commit being tested.
 - **Guest app:** app name, package name, and version.
 - **Steps to reproduce:** list the actions in order.
 - **Expected result:** what you thought would happen.
 - **Actual result:** what happened instead, including whether the guest process closed or returned to the host.
-- **Diagnostics:** relevant CloneHub logs, with personal information removed.
+- **Diagnostics:** relevant Fuku logs, with personal information removed.
 
 Do not upload private APKs, account data, authentication tokens, or logs containing sensitive information.
 
@@ -202,7 +202,7 @@ Do not upload private APKs, account data, authentication tokens, or logs contain
 
 | Category | Use it for |
 |----------|------------|
-| Bug | A reproducible problem in CloneHub |
+| Bug | A reproducible problem in Fuku |
 | Compatibility | A guest app or Android-version-specific issue |
 | Enhancement | An improvement to existing behavior |
 | Feature request | A proposed new capability |
@@ -214,4 +214,4 @@ Do not upload private APKs, account data, authentication tokens, or logs contain
 
 If you're unsure where a change belongs, open an issue with a short explanation of the problem and the modules you think may be involved. It's better to agree on the direction early than to spend time on a change that conflicts with the runtime design.
 
-Thanks for helping make CloneHub more reliable.
+Thanks for helping make Fuku more reliable.

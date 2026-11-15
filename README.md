@@ -1,36 +1,36 @@
-# CloneHub
+# Fuku
 
-CloneHub is an Android app-cloning project. The goal is to create separately installed app packages that Android manages as independent applications, each with its own package identity and app data directory.
+Fuku is an Android app-cloning manager with two installable editions:
 
-## Current status
+- **Fuku Lite** — restricted to the installed Roblox app.
+- **Fuku Universal** — lets users select other installed, launchable, non-system apps.
 
-The manager can enumerate installed apps, extract and verify base/split APKs, inspect package metadata, rewrite package identity and provider authorities, re-sign the APK set, and hand it to Android Package Installer. This is the first-generation compatibility-limited clone path.
+Each edition has a separate Android application ID, so both can be installed side by side.
 
-## Clone workflow
+## How it works
 
-1. Select an installed app.
-2. Prepare and checksum its base APK and split APKs.
-3. Inspect its package metadata and signing certificate.
-4. Rewrite the package ID, app label, provider authorities, app-defined permissions, and relevant manifest references.
-5. Sign the rewritten APK set with CloneHub's persistent local signing key.
-6. Submit the APK set to Android's Package Installer for user-approved installation.
+1. Select an installed app (Roblox in Lite; other launchable user apps in Universal).
+2. Fuku copies the app's base and split APK files into its private workspace and verifies their SHA-256 hashes.
+3. The APK set is inspected, package identity and selected manifest references are rewritten, and the set is re-signed with Fuku's local signing key.
+4. Android Package Installer presents the installation confirmation. The user must approve it.
 
-Clones are normal installed packages and use Android's package sandbox. CloneHub does not inject runtime payloads, spoof signatures, or spoof device identity. The original app is not modified.
+Clones are separate installed packages with their own Android app data. The original app is not modified. Fuku does not promise compatibility with every app. Apps relying on their original signing certificate, hard-coded package IDs, Play Integrity, Google Play services, DRM, anti-tamper checks, or server-side validation may fail. Split APKs, native libraries, and app-specific install requirements can also affect compatibility.
 
-Compatibility is app-dependent. Apps that rely on their original signing certificate, hard-coded package IDs or provider authorities, Play Integrity, Google Play services, DRM, anti-tamper checks, or server-side validation may fail. Roblox compatibility is not guaranteed.
-
-The signing key is stored in CloneHub's private app data. Keep CloneHub installed and retain its app data if you want future clones to use the same signing identity.
+Use only apps and APKs you are authorized to modify. Fuku does not bypass app protections or platform security checks.
 
 ## Build
 
-Requirements: JDK 17, Android SDK 35, and the Gradle wrapper included in this repository.
+Requirements: JDK 17 and Android SDK 35.
 
 ```sh
-./gradlew :app:assembleDebug
+./gradlew :app:assembleLiteDebug :app:assembleUniversalDebug
 ```
 
-Output: `app/build/outputs/apk/debug/app-debug.apk`.
+Outputs:
+
+- `app/build/outputs/apk/lite/debug/app-lite-debug.apk`
+- `app/build/outputs/apk/universal/debug/app-universal-debug.apk`
 
 ## License
 
-CloneHub is distributed under GNU GPL version 3.0. See `THIRD_PARTY_NOTICES.md` for upstream attribution.
+Fuku is distributed under GNU GPL version 3.0. See `THIRD_PARTY_NOTICES.md` for upstream attribution.
