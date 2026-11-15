@@ -61,7 +61,6 @@ class ManifestAndArscMutator {
         private const val ATTR_ACCOUNT_TYPE = 0x0101028f
         private const val ATTR_CONTENT_AUTHORITY = 0x01010290
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
-        private const val ATTR_RESIZEABLE_ACTIVITY = 0x010103ee
         private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
 
         private const val TAG_APPLICATION = "application"
@@ -172,28 +171,18 @@ class ManifestAndArscMutator {
         val rawOrigFactory = factoryAttr?.getValueAsString()
         val expandedOrigFactory = rawOrigFactory?.let { expandClassName(origPkg, it) }
 
-        // Experimental: request Android resizable-task support for freeform/multi-window testing.
-        // Device firmware must still expose freeform windows; this flag cannot enable OEM-disabled mode.
-        appElement.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
-            .setValueAsBoolean(true)
-
         mutateProcessAndAffinity(appElement, origPkg, clonePkg)
         mutateComponentPermissions(appElement, origPkg, cloneSuffix, permissionMap)
 
         // 6. Traverse all component elements inside <application>.
         for (comp in collectComponents(appElement)) {
-            // Allow individual activities to participate in Android multi-window where supported.
-            if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
-                comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
-                    .setValueAsBoolean(true)
-                if (forceLandscape && comp.equalsName("activity")) {
-                    // Android's SCREEN_ORIENTATION_LANDSCAPE enum value is 0.
-                    comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
-                        .apply {
-                            setValueType(ValueType.DEC)
-                            setData(0)
-                        }
-                }
+            // Roblox clone activities retain the requested landscape orientation.
+            if (forceLandscape && comp.equalsName("activity")) {
+                comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
+                    .apply {
+                        setValueType(ValueType.DEC)
+                        setData(0)
+                    }
             }
 
             // Expand android:name.

@@ -99,7 +99,8 @@ class MainActivity : ComponentActivity() {
                             getSharedPreferences("fuku_setup", MODE_PRIVATE).edit().putBoolean("requirements_seen", true).apply()
                         },
                         onOpenInstallSettings = ::openInstallSettings,
-                        onOpenOverlaySettings = ::openOverlaySettings
+                        onOpenOverlaySettings = ::openOverlaySettings,
+                        onStartFloatingPanel = ::startFloatingPanel
                     )
                 }
             }
@@ -111,6 +112,14 @@ class MainActivity : ComponentActivity() {
         refreshApps()
         refreshWorkspaces()
         if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) showRequirements = true
+    }
+
+    private fun startFloatingPanel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            openOverlaySettings()
+            return
+        }
+        startService(Intent(this, FloatingWindowService::class.java))
     }
 
     private fun openOverlaySettings() {
@@ -345,7 +354,8 @@ private fun FukuHome(
     showRequirements: Boolean,
     onDismissRequirements: () -> Unit,
     onOpenInstallSettings: () -> Unit,
-    onOpenOverlaySettings: () -> Unit
+    onOpenOverlaySettings: () -> Unit,
+    onStartFloatingPanel: () -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -372,6 +382,9 @@ private fun FukuHome(
             if (BuildConfig.FLAVOR == "lite") "Choose Roblox and tap Clone. Fuku handles preparation automatically." else "Select an installed app to inspect or prepare its APK files.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Button(onClick = onStartFloatingPanel, modifier = Modifier.fillMaxWidth()) {
+            Text("Start floating clone panel")
+        }
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -600,7 +613,7 @@ private fun FukuHome(
                     Text("Before cloning, review these Android requirements:")
                     Text("1. Install unknown apps — allow Fuku to request installation of the separate clone.")
                     Text("2. Android install approval — confirm the system installer prompt for each clone.")
-                    Text("3. Floating overlay (optional) — allow Fuku to draw a small control panel over other apps. This does not make Roblox itself a floating window.")
+                    Text("3. Floating clone panel — allow Fuku to show a movable panel over other apps. The panel can launch installed Fuku clones; it does not embed their gameplay inside itself.")
                     Text("4. App visibility — Fuku lists launchable apps it can see. This is declared in the app manifest, not a runtime permission prompt.")
                     Text("Fuku does not request accessibility, contacts, storage, or device-admin permissions.")
                 }
