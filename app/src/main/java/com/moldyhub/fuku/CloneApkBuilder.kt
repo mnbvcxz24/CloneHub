@@ -170,7 +170,7 @@ class CloneApkBuilder(private val context: Context) {
         module.setLoadDefaultFramework(false)
         val manifest = module.androidManifest ?: error("Source APK manifest is missing.")
         val mainActivity = manifest.getMainActivity() ?: error("Source APK has no MAIN activity.")
-        val rawName = mainActivity.searchAttributeByResourceId(0x01010003)?.getDataAsString()
+        val rawName = mainActivity.searchAttributeByResourceId(0x01010003)?.getValueString()
             ?.takeIf { it.isNotBlank() } ?: error("Could not identify the source app launcher activity.")
         return when {
             rawName.startsWith(".") -> packageName + rawName
