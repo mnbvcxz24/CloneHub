@@ -42,8 +42,8 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
-import java.util.Properties
 import java.util.Locale
+import java.util.Properties
 
 private data class InstalledApp(
     val label: String,
@@ -52,12 +52,24 @@ private data class InstalledApp(
     val apkPaths: List<String>
 )
 
+private data class PreparedWorkspace(
+    val packageName: String,
+    val appLabel: String,
+    val directory: String,
+    val apkCount: Int,
+    val totalBytes: Long,
+    val createdAt: Long,
+    val filesValid: Boolean
+)
+
 class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
+    private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshApps()
+        refreshWorkspaces()
         setContent {
             MaterialTheme {
                 Surface(
@@ -66,7 +78,11 @@ class MainActivity : ComponentActivity() {
                 ) {
                     CloneHubHome(
                         apps = installedApps,
-                        onRefresh = ::refreshApps,
+                        workspaces = preparedWorkspaces,
+                        onRefresh = {
+                            refreshApps()
+                            refreshWorkspaces()
+                        },
                         onPrepare = ::prepareApks
                     )
                 }
@@ -77,6 +93,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshApps()
+        refreshWorkspaces()
     }
 
     @Suppress("DEPRECATION")
@@ -100,6 +117,47 @@ class MainActivity : ComponentActivity() {
             }
             .sortedBy { it.label.lowercase() }
             .toList()
+    }
+
+    private fun refreshWorkspaces() {
+        val root = File(filesDir, "prepared_apks")
+        preparedWorkspaces = root.listFiles()
+            ?.asSequence()
+            ?.filter { it.isDirectory }
+            ?.mapNotNull { directory ->
+                runCatching {
+                    val metadataFile = File(directory, "workspace.properties")
+                    require(metadataFile.isFile) { "Workspace metadata is missing." }
+                    val metadata = Properties()
+                    FileInputStream(metadataFile).use(metadata::load)
+                    val packageName = metadata.getProperty("packageName") ?: return@runCatching null
+                    val count = metadata.getProperty("apkCount")?.toIntOrNull() ?: 0
+                    val records = (0 until count).map { index ->
+                        val name = metadata.getProperty("apk.$index.name")
+                            ?: error("APK filename is missing.")
+                        val bytes = metadata.getProperty("apk.$index.bytes")?.toLongOrNull()
+                            ?: error("APK size is missing.")
+                        val hash = metadata.getProperty("apk.$index.sha256")
+                            ?: error("APK checksum is missing.")
+                        Triple(File(directory, name), bytes, hash)
+                    }
+                    val valid = records.isNotEmpty() && records.all { (file, bytes, _) ->
+                        file.isFile && file.length() == bytes
+                    }
+                    PreparedWorkspace(
+                        packageName = packageName,
+                        appLabel = metadata.getProperty("appLabel") ?: packageName,
+                        directory = directory.absolutePath,
+                        apkCount = count,
+                        totalBytes = records.sumOf { it.second },
+                        createdAt = metadata.getProperty("createdAtEpochMs")?.toLongOrNull() ?: 0L,
+                        filesValid = valid
+                    )
+                }.getOrNull()
+            }
+            ?.sortedByDescending { it.createdAt }
+            ?.toList()
+            ?: emptyList()
     }
 
     private data class ApkCopyRecord(val name: String, val bytes: Long, val sha256: String)
@@ -185,11 +243,14 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val sizeMb = totalBytes / (1024.0 * 1024.0)
-                "Prepared and verified ${extractedFiles.size} APK file(s) (${String.format(Locale.US, "%.1f", sizeMb)} MB).\nSHA-256 checks passed for every file.\nWorkspace metadata saved.\nPrivate storage:\n${workspace.absolutePath}"
+                "Prepared and verified ${extractedFiles.size} APK file(s) (${String.format(Locale.US, "%.1f", sizeMb)} MB).\nSHA-256 checks passed for every file.\nWorkspace metadata saved."
             }.getOrElse { error ->
                 "Extraction failed: ${error.message ?: error.javaClass.simpleName}"
             }
-            runOnUiThread { onComplete(result) }
+            runOnUiThread {
+                refreshWorkspaces()
+                onComplete(result)
+            }
         }.start()
     }
 }
@@ -197,6 +258,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun CloneHubHome(
     apps: List<InstalledApp>,
+    workspaces: List<PreparedWorkspace>,
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit
 ) {
@@ -204,6 +266,7 @@ private fun CloneHubHome(
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
     var preparingPackage by remember { mutableStateOf<String?>(null) }
     var preparationResult by remember { mutableStateOf<String?>(null) }
+    var selectedWorkspace by remember { mutableStateOf<PreparedWorkspace?>(null) }
     val filteredApps = remember(apps, search) {
         apps.filter {
             it.label.contains(search, ignoreCase = true) ||
@@ -213,7 +276,7 @@ private fun CloneHubHome(
 
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("CloneHub", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
@@ -222,9 +285,7 @@ private fun CloneHubHome(
         )
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
             BasicTextField(
                 value = search,
@@ -243,20 +304,56 @@ private fun CloneHubHome(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Installed apps", fontWeight = FontWeight.SemiBold)
+                Text("Prepared workspaces", fontWeight = FontWeight.SemiBold)
                 Text(
-                    "${apps.size} launchable apps",
+                    "${workspaces.size} saved app workspace(s)",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Button(onClick = onRefresh) { Text("Refresh") }
         }
+        if (workspaces.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(0.42f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(workspaces, key = { it.packageName }) { workspace ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { selectedWorkspace = workspace }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(workspace.appLabel, fontWeight = FontWeight.Medium)
+                                Text(
+                                    "${workspace.apkCount} APK(s) • ${String.format(Locale.US, "%.1f", workspace.totalBytes / (1024.0 * 1024.0))} MB",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                if (workspace.filesValid) "Ready" else "Check files",
+                                color = if (workspace.filesValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Text("Installed apps", fontWeight = FontWeight.SemiBold)
+        Text(
+            "${apps.size} launchable apps",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         if (filteredApps.isEmpty()) {
-            Text(
-                "No matching launchable apps found.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("No matching launchable apps found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
@@ -288,16 +385,8 @@ private fun CloneHubHome(
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Text(app.label, fontWeight = FontWeight.Medium)
-                                Text(
-                                    app.packageName,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    "${app.apkPaths.size} APK file(s)",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Text(app.packageName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${app.apkPaths.size} APK file(s)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -305,7 +394,7 @@ private fun CloneHubHome(
             }
         }
         Text(
-            "APK preparation only. Package modification, signing, and separate installation are not implemented yet.",
+            "Prepared APKs are stored privately. Package modification, signing, and separate installation are not implemented yet.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -313,24 +402,16 @@ private fun CloneHubHome(
 
     selectedApp?.let { app ->
         AlertDialog(
-            onDismissRequest = {
-                if (preparingPackage != app.packageName) selectedApp = null
-            },
+            onDismissRequest = { if (preparingPackage != app.packageName) selectedApp = null },
             title = { Text(app.label) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Package: ${app.packageName}")
                     Text("APK files found: ${app.apkPaths.size}")
                     app.apkPaths.forEachIndexed { index, path ->
-                        Text(
-                            "${if (index == 0) "Base APK" else "Split APK $index"}: $path",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text("${if (index == 0) "Base APK" else "Split APK $index"}: $path", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    preparationResult?.let {
-                        Text(it, fontSize = 12.sp)
-                    }
+                    preparationResult?.let { Text(it, fontSize = 12.sp) }
                 }
             },
             confirmButton = {
@@ -338,7 +419,7 @@ private fun CloneHubHome(
                     enabled = preparingPackage == null,
                     onClick = {
                         preparingPackage = app.packageName
-                        preparationResult = "Copying APK files into CloneHub private storage..."
+                        preparationResult = "Copying APK files and verifying checksums..."
                         onPrepare(app) { result ->
                             preparationResult = result
                             preparingPackage = null
@@ -349,10 +430,28 @@ private fun CloneHubHome(
                 }
             },
             dismissButton = {
-                TextButton(
-                    enabled = preparingPackage != app.packageName,
-                    onClick = { selectedApp = null }
-                ) { Text("Close") }
+                TextButton(enabled = preparingPackage != app.packageName, onClick = { selectedApp = null }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    selectedWorkspace?.let { workspace ->
+        AlertDialog(
+            onDismissRequest = { selectedWorkspace = null },
+            title = { Text(workspace.appLabel) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Package: ${workspace.packageName}")
+                    Text("APK files: ${workspace.apkCount}")
+                    Text("Total size: ${String.format(Locale.US, "%.1f", workspace.totalBytes / (1024.0 * 1024.0))} MB")
+                    Text("Integrity status: ${if (workspace.filesValid) "Files present" else "Missing or incomplete files"}")
+                    Text("Saved path: ${workspace.directory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedWorkspace = null }) { Text("Close") }
             }
         )
     }
