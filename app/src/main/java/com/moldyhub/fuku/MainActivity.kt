@@ -1,4 +1,4 @@
-package com.moldyhub.clonehub
+package com.moldyhub.fuku
 
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    CloneHubHome(
+                    FukuHome(
                         apps = installedApps,
                         workspaces = preparedWorkspaces,
                         onRefresh = {
@@ -103,6 +103,7 @@ class MainActivity : ComponentActivity() {
         installedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
             .asSequence()
             .filter { it.packageName != packageName }
+            .filter { BuildConfig.FLAVOR != "lite" || it.packageName == "com.roblox.client" }
             .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
             .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
             .map { info ->
@@ -180,7 +181,7 @@ class MainActivity : ComponentActivity() {
     private fun cloneWorkspace(workspace: PreparedWorkspace, onComplete: (String) -> Unit) {
         Thread {
             val result = runCatching {
-                val outcome = CloneApkBuilder(this).buildAndInstall(workspace.directory, workspace.packageName, workspace.appLabel)
+                val outcome = CloneApkBuilder(this).buildAndInstall(workspace.directory, workspace.packageName, workspace.appLabel, BuildConfig.FLAVOR == "universal")
                 "Built ${outcome.packageName}. Android's installer session is ready; approve the install prompt if it appears."
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
@@ -269,7 +270,7 @@ class MainActivity : ComponentActivity() {
                 val metadataTemp = File(workspace, "workspace.properties.tmp")
                 val metadataFile = File(workspace, "workspace.properties")
                 FileOutputStream(metadataTemp).use { output ->
-                    metadata.store(output, "CloneHub prepared APK workspace")
+                    metadata.store(output, "Fuku prepared APK workspace")
                     output.fd.sync()
                 }
                 if (!metadataTemp.renameTo(metadataFile)) {
@@ -291,7 +292,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun CloneHubHome(
+private fun FukuHome(
     apps: List<InstalledApp>,
     workspaces: List<PreparedWorkspace>,
     onRefresh: () -> Unit,
@@ -319,7 +320,7 @@ private fun CloneHubHome(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("CloneHub", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text(if (BuildConfig.FLAVOR == "lite") "Fuku Lite" else "Fuku Universal", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
             "Select an installed app to inspect or prepare its APK files.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -435,7 +436,7 @@ private fun CloneHubHome(
             }
         }
         Text(
-            "Prepared APKs are stored privately. CloneHub can now rebuild a separate package and hand it to Android's installer.",
+            "Prepared APKs are stored privately. Fuku can now rebuild a separate package and hand it to Android's installer.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

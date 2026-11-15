@@ -1,4 +1,4 @@
-package com.moldyhub.clonehub
+package com.moldyhub.fuku
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -31,19 +31,19 @@ data class CloneBuildOutcome(val packageName: String, val apkDirectory: String, 
 
 class CloneApkBuilder(private val context: Context) {
     companion object {
-        private const val KEYSTORE_PASSWORD = "clonehub-local-signing-key"
-        private const val INSTALL_ACTION = "com.moldyhub.clonehub.CLONE_INSTALL_STATUS"
+        private const val KEYSTORE_PASSWORD = "fuku-local-signing-key"
+        private const val INSTALL_ACTION = "com.moldyhub.fuku.CLONE_INSTALL_STATUS"
         private const val MAX_CLONE_INDEX = 999
     }
 
-    fun buildAndInstall(workspacePath: String, originalPackage: String, appLabel: String): CloneBuildOutcome {
-        require(originalPackage == "com.roblox.client") { "Fuku currently supports only the installed Roblox app." }
+    fun buildAndInstall(workspacePath: String, originalPackage: String, appLabel: String, allowAnyApp: Boolean = false): CloneBuildOutcome {
+        if (!allowAnyApp) require(originalPackage == "com.roblox.client") { "Fuku Lite currently supports only the installed Roblox app." }
         require(originalPackage.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
             "This package name cannot be safely converted to a clone ID."
         }
         require(originalPackage.length <= 220) { "The source package name is too long to create a separate package ID." }
         if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
-            error("Allow CloneHub to install unknown apps in Android Settings, then try again.")
+            error("Allow Fuku to install unknown apps in Android Settings, then try again.")
         }
 
         val workspace = File(workspacePath)
@@ -68,7 +68,7 @@ class CloneApkBuilder(private val context: Context) {
         require(baseInfo.packageName == originalPackage) { "The prepared base APK package ID does not match the workspace." }
 
         val cloneIndex = (1..MAX_CLONE_INDEX).firstOrNull { index ->
-            val candidate = "$originalPackage.clonehub.c${index.toString().padStart(3, '0')}"
+            val candidate = "$originalPackage.fuku.c${index.toString().padStart(3, '0')}"
             try {
                 context.packageManager.getPackageInfo(candidate, 0)
                 false
@@ -76,8 +76,8 @@ class CloneApkBuilder(private val context: Context) {
                 true
             }
         } ?: error("Clone limit reached for this source app.")
-        val clonePackage = "$originalPackage.clonehub.c${cloneIndex.toString().padStart(3, '0')}"
-        val suffix = "clonehub_c${cloneIndex.toString().padStart(3, '0')}"
+        val clonePackage = "$originalPackage.fuku.c${cloneIndex.toString().padStart(3, '0')}"
+        val suffix = "fuku_c${cloneIndex.toString().padStart(3, '0')}"
 
         val staging = File(context.cacheDir, "clone_build/$clonePackage").apply {
             if (exists()) deleteRecursively()
@@ -179,7 +179,7 @@ class CloneApkBuilder(private val context: Context) {
     }
 
     private fun signApk(input: File, output: File, key: PrivateKey, certificate: X509Certificate) {
-        val config = ApkSigner.SignerConfig.Builder("CloneHub", key, listOf(certificate)).build()
+        val config = ApkSigner.SignerConfig.Builder("Fuku", key, listOf(certificate)).build()
         ApkSigner.Builder(listOf(config))
             .setInputApk(input)
             .setOutputApk(output)
@@ -192,7 +192,7 @@ class CloneApkBuilder(private val context: Context) {
     }
 
     private fun loadOrCreateSigner(): Pair<PrivateKey, X509Certificate> {
-        val keyFile = File(context.filesDir, "signing/clonehub-keystore.p12")
+        val keyFile = File(context.filesDir, "signing/fuku-keystore.p12")
         keyFile.parentFile?.mkdirs()
         val password = KEYSTORE_PASSWORD.toCharArray()
         val store = KeyStore.getInstance("PKCS12")
@@ -204,7 +204,7 @@ class CloneApkBuilder(private val context: Context) {
             generator.initialize(2048)
             val pair = generator.generateKeyPair()
             val now = System.currentTimeMillis()
-            val subject = X500Name("CN=CloneHub Local APK Signer")
+            val subject = X500Name("CN=Fuku Local APK Signer")
             val certificateBuilder = JcaX509v3CertificateBuilder(
                 subject,
                 BigInteger.valueOf(now),
@@ -216,13 +216,13 @@ class CloneApkBuilder(private val context: Context) {
             val contentSigner = JcaContentSignerBuilder("SHA256withRSA").build(pair.private)
             val certificate = JcaX509CertificateConverter().getCertificate(certificateBuilder.build(contentSigner))
             certificate.verify(pair.public)
-            store.setKeyEntry("clonehub", pair.private, password, arrayOf(certificate))
+            store.setKeyEntry("fuku", pair.private, password, arrayOf(certificate))
             FileOutputStream(keyFile).use { store.store(it, password) }
         }
-        val privateKey = store.getKey("clonehub", password) as? PrivateKey
-            ?: error("CloneHub signing key is unavailable.")
-        val certificate = store.getCertificate("clonehub") as? X509Certificate
-            ?: error("CloneHub signing certificate is unavailable.")
+        val privateKey = store.getKey("fuku", password) as? PrivateKey
+            ?: error("Fuku signing key is unavailable.")
+        val certificate = store.getCertificate("fuku") as? X509Certificate
+            ?: error("Fuku signing certificate is unavailable.")
         return privateKey to certificate
     }
 
