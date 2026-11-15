@@ -3,6 +3,10 @@ package com.moldyhub.fuku
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -65,11 +69,13 @@ private data class PreparedWorkspace(
 class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
+    private var showRequirements by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshApps()
         refreshWorkspaces()
+        showRequirements = !getSharedPreferences("fuku_setup", MODE_PRIVATE).getBoolean("requirements_seen", false)
         setContent {
             MaterialTheme {
                 Surface(
@@ -85,7 +91,14 @@ class MainActivity : ComponentActivity() {
                         },
                         onPrepare = ::prepareApks,
                         onAnalyze = ::analyzeWorkspace,
-                        onClone = ::cloneWorkspace
+                        onClone = ::cloneWorkspace,
+                        onCloneApp = ::cloneApp,
+                        showRequirements = showRequirements,
+                        onDismissRequirements = {
+                            showRequirements = false
+                            getSharedPreferences("fuku_setup", MODE_PRIVATE).edit().putBoolean("requirements_seen", true).apply()
+                        },
+                        onOpenInstallSettings = ::openInstallSettings
                     )
                 }
             }
@@ -96,6 +109,28 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         refreshApps()
         refreshWorkspaces()
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) showRequirements = true
+    }
+
+    private fun openInstallSettings() {
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+        }
+    }
+
+    private fun cloneApp(app: InstalledApp, onComplete: (String) -> Unit) {
+        prepareApks(app) { prepared ->
+            if (!prepared.startsWith("Prepared and verified")) {
+                onComplete(prepared)
+                return@prepareApks
+            }
+            val workspace = preparedWorkspaces.firstOrNull { it.packageName == app.packageName }
+            if (workspace == null || !workspace.filesValid) {
+                onComplete("APK preparation finished, but the verified workspace could not be found.")
+                return@prepareApks
+            }
+            cloneWorkspace(workspace) { result -> onComplete(prepared + "\n\n" + result) }
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -298,7 +333,11 @@ private fun FukuHome(
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
-    onClone: (PreparedWorkspace, (String) -> Unit) -> Unit
+    onClone: (PreparedWorkspace, (String) -> Unit) -> Unit,
+    onCloneApp: (InstalledApp, (String) -> Unit) -> Unit,
+    showRequirements: Boolean,
+    onDismissRequirements: () -> Unit,
+    onOpenInstallSettings: () -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -322,7 +361,7 @@ private fun FukuHome(
     ) {
         Text(if (BuildConfig.FLAVOR == "lite") "Fuku Lite" else "Fuku Universal", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Select an installed app to inspect or prepare its APK files.",
+            if (BuildConfig.FLAVOR == "lite") "Choose Roblox and tap Clone. Fuku handles preparation automatically." else "Select an installed app to inspect or prepare its APK files.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Card(
@@ -340,7 +379,7 @@ private fun FukuHome(
                 }
             )
         }
-        Row(
+        if (BuildConfig.FLAVOR != "lite") Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -355,7 +394,7 @@ private fun FukuHome(
             }
             Button(onClick = onRefresh) { Text("Refresh") }
         }
-        if (workspaces.isNotEmpty()) {
+        if (BuildConfig.FLAVOR != "lite" && workspaces.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(0.42f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -388,9 +427,9 @@ private fun FukuHome(
                 }
             }
         }
-        Text("Installed apps", fontWeight = FontWeight.SemiBold)
+        Text(if (BuildConfig.FLAVOR == "lite") "Roblox" else "Installed apps", fontWeight = FontWeight.SemiBold)
         Text(
-            "${apps.size} launchable apps",
+            if (BuildConfig.FLAVOR == "lite") "One-tap clone" else "${apps.size} launchable apps",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -435,7 +474,7 @@ private fun FukuHome(
                 }
             }
         }
-        Text(
+        if (BuildConfig.FLAVOR != "lite") Text(
             "Prepared APKs are stored privately. Fuku can now rebuild a separate package and hand it to Android's installer.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -461,14 +500,27 @@ private fun FukuHome(
                     enabled = preparingPackage == null,
                     onClick = {
                         preparingPackage = app.packageName
-                        preparationResult = "Copying APK files and verifying checksums..."
-                        onPrepare(app) { result ->
-                            preparationResult = result
-                            preparingPackage = null
+                        preparationResult = if (BuildConfig.FLAVOR == "lite") "Preparing, verifying, and building your Fuku clone..." else "Copying APK files and verifying checksums..."
+                        if (BuildConfig.FLAVOR == "lite") {
+                            onCloneApp(app) { result ->
+                                preparationResult = result
+                                preparingPackage = null
+                            }
+                        } else {
+                            onPrepare(app) { result ->
+                                preparationResult = result
+                                preparingPackage = null
+                            }
                         }
                     }
                 ) {
-                    Text(if (preparingPackage == app.packageName) "Preparing..." else "Prepare APKs")
+                    Text(
+                        when {
+                            preparingPackage == app.packageName -> if (BuildConfig.FLAVOR == "lite") "Cloning..." else "Preparing..."
+                            BuildConfig.FLAVOR == "lite" -> "Clone now"
+                            else -> "Prepare APKs"
+                        }
+                    )
                 }
             },
             dismissButton = {
@@ -479,7 +531,7 @@ private fun FukuHome(
         )
     }
 
-    selectedWorkspace?.let { workspace ->
+    if (BuildConfig.FLAVOR != "lite") selectedWorkspace?.let { workspace ->
         AlertDialog(
             onDismissRequest = { if (analyzingPackage != workspace.packageName && cloningPackage != workspace.packageName) selectedWorkspace = null },
             title = { Text(workspace.appLabel) },
@@ -531,4 +583,29 @@ private fun FukuHome(
             }
         )
     }
+    if (showRequirements) {
+        AlertDialog(
+            onDismissRequest = onDismissRequirements,
+            title = { Text("Fuku setup requirements") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Before cloning, review these Android requirements:")
+                    Text("1. Install unknown apps — allow Fuku to request installation of the separate clone.")
+                    Text("2. Android install approval — confirm the system installer prompt for each clone.")
+                    Text("3. App visibility — Fuku lists launchable apps it can see. This is declared in the app manifest, not a runtime permission prompt.")
+                    Text("The current flow does not require accessibility, contacts, storage, or device-admin permissions.")
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onDismissRequirements()
+                    onOpenInstallSettings()
+                }) { Text("Open install permission") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissRequirements) { Text("Later") }
+            }
+        )
+    }
+
 }
