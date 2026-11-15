@@ -176,16 +176,18 @@ class VirtualEngine @Inject constructor(
             // 4. Install ATHook synchronously (hooks mH.mCallback + Instrumentation)
             if (!::activityThreadHook.isInitialized) {
                 activityThreadHook = ActivityThreadHook(context, stubRegistry, this)
-                activityThreadHook.install()
-                // CRITICAL: Install Instrumentation hook immediately so newActivity()
-                // is intercepted from the very first EXECUTE_TRANSACTION message.
-                // Without this, the system Instrumentation will try to load guest
-                // classes with the wrong ClassLoader, causing ClassNotFoundException.
-                activityThreadHook.installInstrumentationHookEarly()
+                earlyHookInstalled = activityThreadHook.install()
+                if (earlyHookInstalled) {
+                    // CRITICAL: Install Instrumentation hook immediately so newActivity()
+                    // is intercepted from the very first EXECUTE_TRANSACTION message.
+                    activityThreadHook.installInstrumentationHookEarly()
+                    Timber.tag(TAG).i("ATHook installed early (main thread) ✓")
+                } else {
+                    Timber.tag(TAG).e(
+                        "Early ATHook installation failed; initialization will retry before app launch"
+                    )
+                }
             }
-
-            earlyHookInstalled = true
-            Timber.tag(TAG).i("ATHook installed early (main thread) ✓")
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to install early ATHook — guest apps may show blank screen")
         }
@@ -321,7 +323,15 @@ class VirtualEngine @Inject constructor(
             // (Skip if already installed by installActivityThreadHookEarly)
             if (!earlyHookInstalled) {
                 activityThreadHook = ActivityThreadHook(context, stubRegistry, this)
-                activityThreadHook.install()
+                earlyHookInstalled = activityThreadHook.install()
+                if (earlyHookInstalled) {
+                    activityThreadHook.installInstrumentationHookEarly()
+                    Timber.tag(TAG).i("ATHook installed during engine initialization")
+                } else {
+                    Timber.tag(TAG).e(
+                        "ATHook installation failed during engine initialization; guest activity launches cannot be handled"
+                    )
+                }
             }
 
             // Step 16: Load previously installed apps from disk
@@ -525,6 +535,10 @@ class VirtualEngine @Inject constructor(
             ?: return VmResult.Error("App not found: $instanceId")
 
         Timber.tag(TAG).i("Launching: ${app.appName} (${app.instanceId})")
+        Timber.tag(TAG).i(
+            "Launch preflight: engine=${_status.value}, earlyActivityHook=${earlyHookInstalled}, " +
+                "package=${app.packageName}, slot=${app.processSlot}"
+        )
 
         try {
             // 1. Find main activity (from VPMS, the real service)
@@ -624,10 +638,19 @@ class VirtualEngine @Inject constructor(
                 Timber.tag(TAG).w("FCM drain failed for $instanceId: ${e.message}")
             }
 
-            // 11. Launch via real system (it sees a valid stub component)
+            // 11. Launch via real system (it sees a valid stub component).
+            // startActivity() only confirms that Android accepted the request; the
+            // guest ActivityThread hook performs the asynchronous guest class swap.
+            Timber.tag(TAG).i(
+                "Dispatching stub launch: component=${intent.component}, " +
+                    "target=${app.packageName}/$mainActivity"
+            )
             context.startActivity(intent)
 
-            Timber.tag(TAG).i("Launched: ${app.appName} via stub $stubClass (launchMode=$launchMode)")
+            Timber.tag(TAG).i(
+                "Launch request accepted by Android for ${app.appName}; " +
+                    "guest activity creation is still pending (stub=$stubClass)"
+            )
             return VmResult.Success(Unit)
 
         } catch (e: Exception) {
