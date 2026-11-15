@@ -1,3 +1,5 @@
+import java.util.zip.ZipFile
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -67,7 +69,7 @@ val extractCloneRuntimeDex by tasks.registering {
         check(apk.isFile) { "Clone runtime APK missing: " + apk.absolutePath }
         val output = cloneRuntimeDex.get().asFile
         output.parentFile.mkdirs()
-        java.util.zip.ZipFile(apk).use { archive ->
+        ZipFile(apk).use { archive ->
             val dex = archive.getEntry("classes.dex") ?: error("Clone runtime APK has no classes.dex.")
             archive.getInputStream(dex).use { input ->
                 output.outputStream().use { target -> input.copyTo(target) }
