@@ -1,14 +1,18 @@
 package com.moldyhub.fuku
 
+import android.app.ActivityManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -379,19 +383,77 @@ class FloatingCloneWindow(
 
     private fun launchClone() {
         val pkg = clone.packageName
-        val component = context.packageManager.getLaunchIntentForPackage(pkg)?.component?.flattenToString()
-        if (component == null) {
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
+        val component = launchIntent?.component?.flattenToString()
+        if (launchIntent == null || component == null) {
             fail("$pkg has no launchable screen.")
             return
         }
+
+        // Android can silently ignore secondary-display routing on devices that do not
+        // advertise this feature. Check the platform capability and permission before
+        // invoking the root shell, so we do not accidentally open the game fullscreen.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            fail("Fuku's secondary-display diagnostics require Android 10 or newer.")
+            return
+        }
+        val supportsSecondaryDisplays = context.packageManager.hasSystemFeature(
+            PackageManager.FEATURE_ACTIVITIES_ON_SECONDARY_DISPLAYS
+        )
         val id = displayId
+        val allowed = (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+            .isActivityStartAllowedOnDisplay(context, id, launchIntent)
+        val displayFlags = virtualDisplay?.display?.flags ?: -1
+        Log.i(
+            "FukuDisplay",
+            "package=$pkg displayId=$id displayFlags=$displayFlags " +
+                "supportsSecondaryDisplays=$supportsSecondaryDisplays allowed=$allowed"
+        )
+
+        if (!supportsSecondaryDisplays) {
+            fail("This Android 15 device does not advertise app launches on secondary displays. " +
+                "Fuku stopped the launch to avoid opening the clone fullscreen.")
+            return
+        }
+        if (!allowed) {
+            fail("Android blocked launching $pkg on Fuku display $id. " +
+                "Fuku stopped the launch to avoid opening it fullscreen.")
+            return
+        }
+
         worker.execute {
             // -S restarts the clone so it lands on this display instead of an existing task.
             val result = RootShell.run("am start -S --display $id -n '$component'")
             val failed = result.exitCode != 0 ||
                 result.output.contains("Error", ignoreCase = true) ||
                 result.output.contains("Exception")
-            if (failed) main.post { fail("Could not start the clone: ${result.output.take(200)}") }
+            val activityDump = if (!failed) {
+                RootShell.run("dumpsys activity activities").output
+            } else {
+                ""
+            }
+            val dumpLines = activityDump.lines()
+            val matchingIndexes = dumpLines.indices.filter { dumpLines[it].contains(pkg) }
+            val taskExcerpt = matchingIndexes.flatMap { index ->
+                (maxOf(0, index - 2)..minOf(dumpLines.lastIndex, index + 3)).toList()
+            }.distinct().sorted().joinToString("\\n") { dumpLines[it] }.take(1600)
+            Log.i(
+                "FukuDisplay",
+                "launchExitCode=${result.exitCode} launchOutput=${result.output} " +
+                    "taskExcerpt=${taskExcerpt.ifBlank { "No matching task record found in dumpsys." }}"
+            )
+            main.post {
+                if (failed) {
+                    fail("Could not start the clone: ${result.output.take(200)}")
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Android accepted the launch request for display $id. " +
+                            "This does not yet confirm where the game rendered; please check the window.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
     }
 
