@@ -4,29 +4,24 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- "VM" text as icon foreground -->
-    <group
-        android:translateX="16"
-        android:translateY="24">
-        <!-- V letter -->
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M10,20 L22,50 L34,20 L28,20 L22,38 L16,20 Z" />
-        <!-- M letter -->
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M40,20 L40,50 L46,50 L46,30 L54,44 L62,30 L62,50 L68,50 L68,20 L62,20 L54,36 L46,20 Z" />
-    </group>
-    <!-- Small circuit-like decorative lines -->
+    <!-- Rear tile: the duplicate/instance motif -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M31,23
+            C31,19.7 33.7,17 37,17
+            H66 C69.3,17 72,19.7 72,23
+            V57 C72,60.3 69.3,63 66,63
+            H37 C33.7,63 31,60.3 31,57 Z" />
+    <!-- Front tile -->
     <path
         android:fillColor="#FFFFFF"
-        android:strokeWidth="1.5"
-        android:strokeColor="#FFFFFF"
-        android:pathData="M20,70 L88,70"
-        android:fillType="nonZero" />
+        android:pathData="M39,34
+            C39,30.7 41.7,28 45,28
+            H72 C75.3,28 78,30.7 78,34
+            V73 C78,76.3 75.3,79 72,79
+            H45 C41.7,79 39,76.3 39,73 Z" />
+    <!-- F mark -->
     <path
-        android:fillColor="#00000000"
-        android:strokeWidth="1"
-        android:strokeColor="#FFFFFF"
-        android:pathData="M30,76 L78,76" />
+        android:fillColor="#4F46E5"
+        android:pathData="M49,42 H69 V49 H56 V55 H67 V62 H56 V72 H49 Z" />
 </vector>
