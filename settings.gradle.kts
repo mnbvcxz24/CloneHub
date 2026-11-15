@@ -10,4 +10,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral(); maven { url = uri("https://jitpack.io") } }
 }
 rootProject.name = "Fuku"
-include(":app")
+include(":app", ":clone-runtime")

@@ -26,6 +26,9 @@ import java.security.PrivateKey
 import java.security.cert.X509Certificate
 import java.util.Date
 import java.util.Properties
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 data class CloneBuildOutcome(val packageName: String, val apkDirectory: String, val sessionId: Int)
 
@@ -34,6 +37,9 @@ class CloneApkBuilder(private val context: Context) {
         private const val KEYSTORE_PASSWORD = "fuku-local-signing-key"
         private const val INSTALL_ACTION = "com.moldyhub.fuku.CLONE_INSTALL_STATUS"
         private const val MAX_CLONE_INDEX = 999
+        private const val RUNTIME_SETUP_ACTIVITY = "com.fuku.cloneruntime.RuntimeEntryActivity"
+        private const val RUNTIME_OVERLAY_SERVICE = "com.fuku.cloneruntime.RuntimeOverlayService"
+        private const val RUNTIME_LAUNCHER_METADATA = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER"
     }
 
     fun buildAndInstall(workspacePath: String, originalPackage: String, appLabel: String, allowAnyApp: Boolean = false): CloneBuildOutcome {
@@ -89,6 +95,8 @@ class CloneApkBuilder(private val context: Context) {
             copy
         }
 
+        val originalLauncherClass = readMainActivityClass(stagedApks.first(), originalPackage)
+
         val mutator = ManifestAndArscMutator()
         val mutation = mutator.mutateBaseApk(
             baseApkFile = stagedApks.first(),
@@ -101,6 +109,7 @@ class CloneApkBuilder(private val context: Context) {
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)
         require(mutation.mutatedPackage == clonePackage) { "Manifest package mutation did not complete." }
+        injectCloneRuntime(stagedApks.first(), originalLauncherClass)
 
         val authorities = mutation.authorityMap.toMutableMap()
         val permissions = mutation.permissionMap.toMutableMap()
@@ -154,6 +163,124 @@ class CloneApkBuilder(private val context: Context) {
             session.commit(pendingIntent.intentSender)
         }
         return CloneBuildOutcome(clonePackage, outputDir.absolutePath, sessionId)
+    }
+
+    private fun readMainActivityClass(apkFile: File, packageName: String): String {
+        val module = ApkModule.loadApkFile(apkFile)
+        module.setLoadDefaultFramework(false)
+        val manifest = module.androidManifest ?: error("Source APK manifest is missing.")
+        val mainActivity = manifest.getMainActivity() ?: error("Source APK has no MAIN activity.")
+        val rawName = mainActivity.searchAttributeByResourceId(0x01010003)?.getDataAsString()
+            ?.takeIf { it.isNotBlank() } ?: error("Could not identify the source app launcher activity.")
+        return when {
+            rawName.startsWith(".") -> packageName + rawName
+            '.' !in rawName -> packageName + "." + rawName
+            else -> rawName
+        }
+    }
+
+    private fun injectCloneRuntime(apkFile: File, originalLauncherClass: String) {
+        val module = ApkModule.loadApkFile(apkFile)
+        module.setLoadDefaultFramework(false)
+        val manifest = module.androidManifest ?: error("Mutated clone manifest is missing.")
+        val mainActivity = manifest.getMainActivity()
+            ?: error("Could not find the original launcher activity after package mutation.")
+        val filters = mainActivity.getElements("intent-filter")
+        while (filters.hasNext()) {
+            val filter = filters.next()
+            val categories = filter.getElements("category")
+            while (categories.hasNext()) {
+                val category = categories.next()
+                val name = category.searchAttributeByResourceId(0x01010003)?.getDataAsString()
+                if (name == "android.intent.category.LAUNCHER") category.removeSelf()
+            }
+        }
+
+        manifest.addUsesPermission("android.permission.SYSTEM_ALERT_WINDOW")
+        manifest.addUsesPermission("android.permission.FOREGROUND_SERVICE")
+        manifest.addUsesPermission("android.permission.FOREGROUND_SERVICE_SPECIAL_USE")
+
+        val application = manifest.getOrCreateApplicationElement()
+        val setupActivity = manifest.getOrCreateActivity(RUNTIME_SETUP_ACTIVITY, false)
+        setupActivity.getOrCreateAndroidAttribute("exported", 0x01010010).setValueAsBoolean(true)
+        setupActivity.getOrCreateAndroidAttribute("theme", 0x01010000)
+            .setValueAsString("@android:style/Theme.Material.Light.NoActionBar")
+        setupActivity.getOrCreateAndroidAttribute("label", 0x01010001).setValueAsString("Fuku Setup")
+        val launcherFilter = setupActivity.newElement("intent-filter")
+        launcherFilter.newElement("action").getOrCreateAndroidAttribute("name", 0x01010003)
+            .setValueAsString("android.intent.action.MAIN")
+        launcherFilter.newElement("category").getOrCreateAndroidAttribute("name", 0x01010003)
+            .setValueAsString("android.intent.category.LAUNCHER")
+
+        val service = application.newElement("service")
+        service.getOrCreateAndroidAttribute("name", 0x01010003).setValueAsString(RUNTIME_OVERLAY_SERVICE)
+        service.getOrCreateAndroidAttribute("exported", 0x01010010).setValueAsBoolean(false)
+        service.getOrCreateAndroidAttribute("foregroundServiceType", 0x010105A9)
+            .setValueAsString("specialUse")
+        val subtype = service.newElement("property")
+        subtype.getOrCreateAndroidAttribute("name", 0x01010003)
+            .setValueAsString("android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE")
+        subtype.getOrCreateAndroidAttribute("value", 0x01010024)
+            .setValueAsString("Displays floating controls for this cloned app")
+
+        val launcherMetadata = application.newElement("meta-data")
+        launcherMetadata.getOrCreateAndroidAttribute("name", 0x01010003)
+            .setValueAsString(RUNTIME_LAUNCHER_METADATA)
+        launcherMetadata.getOrCreateAndroidAttribute("value", 0x01010024)
+            .setValueAsString(originalLauncherClass)
+
+        val rewritten = File(apkFile.parentFile, apkFile.name + ".runtime.tmp")
+        module.writeApk(rewritten)
+        if (apkFile.exists() && !apkFile.delete()) error("Could not replace the clone manifest.")
+        if (!rewritten.renameTo(apkFile)) {
+            rewritten.copyTo(apkFile, overwrite = true)
+            rewritten.delete()
+        }
+        appendRuntimeDex(apkFile)
+    }
+
+    private fun appendRuntimeDex(apkFile: File) {
+        val runtimeDex = context.assets.open("clone-runtime.dex").use { it.readBytes() }
+        require(runtimeDex.isNotEmpty()) { "Embedded clone runtime DEX is empty." }
+        val temporary = File(apkFile.parentFile, apkFile.name + ".dex.tmp")
+        ZipFile(apkFile).use { source ->
+            val dexNumbers = source.entries().asSequence().mapNotNull { entry ->
+                val match = Regex("^classes(\\d*)\\.dex$").matchEntire(entry.name) ?: return@mapNotNull null
+                match.groupValues[1].ifEmpty { "1" }.toIntOrNull()
+            }.toList()
+            require(dexNumbers.isNotEmpty()) { "Source APK has no DEX bytecode." }
+            val nextDexNumber = (dexNumbers.maxOrNull() ?: 1) + 1
+            val nextDex = "classes" + nextDexNumber + ".dex"
+            ZipOutputStream(FileOutputStream(temporary)).use { output ->
+                val entries = source.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val copy = ZipEntry(entry.name).apply {
+                        time = entry.time
+                        comment = entry.comment
+                        if (entry.method == ZipEntry.STORED) {
+                            method = ZipEntry.STORED
+                            size = entry.size
+                            compressedSize = entry.size
+                            crc = entry.crc
+                        } else {
+                            method = ZipEntry.DEFLATED
+                        }
+                    }
+                    output.putNextEntry(copy)
+                    source.getInputStream(entry).use { input -> input.copyTo(output) }
+                    output.closeEntry()
+                }
+                output.putNextEntry(ZipEntry(nextDex))
+                output.write(runtimeDex)
+                output.closeEntry()
+            }
+        }
+        if (apkFile.exists() && !apkFile.delete()) error("Could not replace the APK after adding runtime DEX.")
+        if (!temporary.renameTo(apkFile)) {
+            temporary.copyTo(apkFile, overwrite = true)
+            temporary.delete()
+        }
     }
 
     private fun fixApplicationClassNames(apkFile: File, applicationClass: String?, factoryClass: String?) {

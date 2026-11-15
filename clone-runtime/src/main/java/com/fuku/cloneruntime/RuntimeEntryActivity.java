@@ -1,0 +1,131 @@
+package com.fuku.cloneruntime;
+
+import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Typeface;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.provider.Settings;
+import android.view.Gravity;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+
+public final class RuntimeEntryActivity extends Activity {
+    private static final String META_LAUNCHER = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER";
+    private Button permissionButton;
+    private Button launchButton;
+
+    @Override
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        if (getPreferences(MODE_PRIVATE).getBoolean("complete", false)
+                && Settings.canDrawOverlays(this)) {
+            launchOriginalApp();
+            return;
+        }
+        showSetup();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updatePermissionState();
+    }
+
+    private void showSetup() {
+        int pad = dp(24);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setPadding(pad, pad, pad, pad);
+        root.setBackgroundColor(0xFF10131A);
+
+        TextView title = new TextView(this);
+        title.setText("Fuku Clone Setup");
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(25);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        root.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView description = new TextView(this);
+        description.setText("This setup is built into this cloned app. Allow display-over-other-apps access to enable its floating controls. Fuku does not need to stay open after installation. The game itself will still launch in its normal Android activity for this first test.");
+        description.setTextColor(0xFFCDD3DF);
+        description.setTextSize(15);
+        LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
+        descriptionParams.topMargin = dp(14);
+        root.addView(description, descriptionParams);
+
+        permissionButton = new Button(this);
+        permissionButton.setText("Grant overlay permission");
+        LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(-1, -2);
+        permissionParams.topMargin = dp(26);
+        root.addView(permissionButton, permissionParams);
+        permissionButton.setOnClickListener(v -> {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        });
+
+        launchButton = new Button(this);
+        launchButton.setText("Continue to Roblox");
+        LinearLayout.LayoutParams launchParams = new LinearLayout.LayoutParams(-1, -2);
+        launchParams.topMargin = dp(10);
+        root.addView(launchButton, launchParams);
+        launchButton.setOnClickListener(v -> launchOriginalApp());
+
+        TextView note = new TextView(this);
+        note.setText("Floating gameplay rendering is not enabled yet. This stage tests the independent setup and overlay runtime.");
+        note.setTextColor(0xFFFFD18A);
+        note.setTextSize(12);
+        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
+        noteParams.topMargin = dp(20);
+        root.addView(note, noteParams);
+
+        setContentView(root);
+        updatePermissionState();
+    }
+
+    private void updatePermissionState() {
+        if (permissionButton == null || launchButton == null) return;
+        boolean allowed = Settings.canDrawOverlays(this);
+        permissionButton.setText(allowed ? "Overlay permission granted" : "Grant overlay permission");
+        launchButton.setEnabled(allowed);
+    }
+
+    private void launchOriginalApp() {
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Allow overlay permission first.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            ApplicationInfo info = getPackageManager().getApplicationInfo(
+                    getPackageName(), PackageManager.GET_META_DATA);
+            String launcherClass = info.metaData == null ? null : info.metaData.getString(META_LAUNCHER);
+            if (launcherClass == null || launcherClass.isEmpty()) {
+                throw new IllegalStateException("Original game launcher was not recorded in the clone.");
+            }
+            Intent service = new Intent(this, RuntimeOverlayService.class);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+            else startService(service);
+
+            getPreferences(MODE_PRIVATE).edit().putBoolean("complete", true).apply();
+            Intent game = new Intent().setComponent(new ComponentName(getPackageName(), launcherClass));
+            game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(game);
+            finish();
+        } catch (Exception error) {
+            Toast.makeText(this, "Could not start the cloned app: " + error.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+}
