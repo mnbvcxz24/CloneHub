@@ -95,7 +95,8 @@ class CloneApkBuilder(private val context: Context) {
             origPkg = originalPackage,
             clonePkg = clonePackage,
             cloneSuffix = suffix,
-            customAppLabel = "Fuku " + cloneIndex.toString().padStart(2, '0')
+            customAppLabel = "Fuku " + cloneIndex.toString().padStart(2, '0'),
+            forceLandscape = originalPackage == "com.roblox.client"
         )
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)

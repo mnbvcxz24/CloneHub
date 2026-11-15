@@ -62,6 +62,7 @@ class ManifestAndArscMutator {
         private const val ATTR_CONTENT_AUTHORITY = 0x01010290
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
         private const val ATTR_RESIZEABLE_ACTIVITY = 0x010103ee
+        private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
 
         private const val TAG_APPLICATION = "application"
         private const val TAG_META_DATA = "meta-data"
@@ -96,7 +97,8 @@ class ManifestAndArscMutator {
         origPkg: String,
         clonePkg: String,
         cloneSuffix: String, // e.g., "cf001"
-        customAppLabel: String
+        customAppLabel: String,
+        forceLandscape: Boolean = false
     ): MutationResult {
         val apkModule = ApkModule.loadApkFile(baseApkFile)
         // Our mutations do not need resource resolution against the Android
@@ -184,6 +186,11 @@ class ManifestAndArscMutator {
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
+                if (forceLandscape && comp.equalsName("activity")) {
+                    // Android's SCREEN_ORIENTATION_LANDSCAPE enum value is 0.
+                    comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
+                        .setValueAsInteger(0)
+                }
             }
 
             // Expand android:name.
