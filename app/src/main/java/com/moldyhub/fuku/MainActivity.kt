@@ -98,7 +98,8 @@ class MainActivity : ComponentActivity() {
                             showRequirements = false
                             getSharedPreferences("fuku_setup", MODE_PRIVATE).edit().putBoolean("requirements_seen", true).apply()
                         },
-                        onOpenInstallSettings = ::openInstallSettings
+                        onOpenInstallSettings = ::openInstallSettings,
+                        onOpenOverlaySettings = ::openOverlaySettings
                     )
                 }
             }
@@ -110,6 +111,12 @@ class MainActivity : ComponentActivity() {
         refreshApps()
         refreshWorkspaces()
         if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) showRequirements = true
+    }
+
+    private fun openOverlaySettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        }
     }
 
     private fun openInstallSettings() {
@@ -337,7 +344,8 @@ private fun FukuHome(
     onCloneApp: (InstalledApp, (String) -> Unit) -> Unit,
     showRequirements: Boolean,
     onDismissRequirements: () -> Unit,
-    onOpenInstallSettings: () -> Unit
+    onOpenInstallSettings: () -> Unit,
+    onOpenOverlaySettings: () -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -592,15 +600,21 @@ private fun FukuHome(
                     Text("Before cloning, review these Android requirements:")
                     Text("1. Install unknown apps — allow Fuku to request installation of the separate clone.")
                     Text("2. Android install approval — confirm the system installer prompt for each clone.")
-                    Text("3. App visibility — Fuku lists launchable apps it can see. This is declared in the app manifest, not a runtime permission prompt.")
-                    Text("The current flow does not require accessibility, contacts, storage, or device-admin permissions.")
+                    Text("3. Floating overlay (optional) — allow Fuku to draw a small control panel over other apps. This does not make Roblox itself a floating window.")
+                    Text("4. App visibility — Fuku lists launchable apps it can see. This is declared in the app manifest, not a runtime permission prompt.")
+                    Text("Fuku does not request accessibility, contacts, storage, or device-admin permissions.")
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    onDismissRequirements()
-                    onOpenInstallSettings()
-                }) { Text("Open install permission") }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = {
+                        onDismissRequirements()
+                        onOpenInstallSettings()
+                    }) { Text("Open install permission") }
+                    TextButton(onClick = onOpenOverlaySettings) {
+                        Text("Allow floating overlay")
+                    }
+                }
             },
             dismissButton = {
                 TextButton(onClick = onDismissRequirements) { Text("Later") }
