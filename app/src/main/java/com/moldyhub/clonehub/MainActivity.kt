@@ -83,7 +83,8 @@ class MainActivity : ComponentActivity() {
                             refreshApps()
                             refreshWorkspaces()
                         },
-                        onPrepare = ::prepareApks
+                        onPrepare = ::prepareApks,
+                        onAnalyze = ::analyzeWorkspace
                     )
                 }
             }
@@ -175,6 +176,27 @@ class MainActivity : ComponentActivity() {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    private fun analyzeWorkspace(workspace: PreparedWorkspace, onComplete: (String) -> Unit) {
+        Thread {
+            val report = runCatching {
+                val directory = File(workspace.directory)
+                val metadata = Properties()
+                FileInputStream(File(directory, "workspace.properties")).use { metadata.load(it) }
+                val count = metadata.getProperty("apkCount")?.toIntOrNull()
+                    ?: error("Workspace APK count is invalid.")
+                val apkFiles = (0 until count).map { index ->
+                    val name = metadata.getProperty("apk.$index.name")
+                        ?: error("APK filename is missing.")
+                    File(directory, name).also { require(it.isFile) { "Missing APK: $name" } }
+                }
+                ApkInspector.inspect(packageManager, apkFiles).toDisplayText()
+            }.getOrElse { error ->
+                "APK analysis failed: ${error.message ?: error.javaClass.simpleName}"
+            }
+            runOnUiThread { onComplete(report) }
+        }.start()
+    }
+
     private fun prepareApks(app: InstalledApp, onComplete: (String) -> Unit) {
         Thread {
             val result = runCatching {
@@ -260,13 +282,16 @@ private fun CloneHubHome(
     apps: List<InstalledApp>,
     workspaces: List<PreparedWorkspace>,
     onRefresh: () -> Unit,
-    onPrepare: (InstalledApp, (String) -> Unit) -> Unit
+    onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
+    onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
     var preparingPackage by remember { mutableStateOf<String?>(null) }
     var preparationResult by remember { mutableStateOf<String?>(null) }
     var selectedWorkspace by remember { mutableStateOf<PreparedWorkspace?>(null) }
+    var analysisResult by remember { mutableStateOf<String?>(null) }
+    var analyzingPackage by remember { mutableStateOf<String?>(null) }
     val filteredApps = remember(apps, search) {
         apps.filter {
             it.label.contains(search, ignoreCase = true) ||
@@ -439,7 +464,7 @@ private fun CloneHubHome(
 
     selectedWorkspace?.let { workspace ->
         AlertDialog(
-            onDismissRequest = { selectedWorkspace = null },
+            onDismissRequest = { if (analyzingPackage != workspace.packageName) selectedWorkspace = null },
             title = { Text(workspace.appLabel) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -448,10 +473,28 @@ private fun CloneHubHome(
                     Text("Total size: ${String.format(Locale.US, "%.1f", workspace.totalBytes / (1024.0 * 1024.0))} MB")
                     Text("Integrity status: ${if (workspace.filesValid) "Files present" else "Missing or incomplete files"}")
                     Text("Saved path: ${workspace.directory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    analysisResult?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { selectedWorkspace = null }) { Text("Close") }
+                Button(
+                    enabled = workspace.filesValid && analyzingPackage == null,
+                    onClick = {
+                        analyzingPackage = workspace.packageName
+                        analysisResult = "Inspecting package metadata, components, permissions, and signing certificates..."
+                        onAnalyze(workspace) { result ->
+                            analysisResult = result
+                            analyzingPackage = null
+                        }
+                    }
+                ) {
+                    Text(if (analyzingPackage == workspace.packageName) "Analyzing..." else "Analyze APKs")
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = analyzingPackage != workspace.packageName, onClick = { selectedWorkspace = null }) {
+                    Text("Close")
+                }
             }
         )
     }
