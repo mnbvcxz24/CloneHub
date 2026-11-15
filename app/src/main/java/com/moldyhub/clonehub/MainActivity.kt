@@ -38,6 +38,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.util.Locale
 
 private data class InstalledApp(
     val label: String,
@@ -60,7 +64,8 @@ class MainActivity : ComponentActivity() {
                 ) {
                     CloneHubHome(
                         apps = installedApps,
-                        onRefresh = ::refreshApps
+                        onRefresh = ::refreshApps,
+                        onPrepare = ::prepareApks
                     )
                 }
             }
@@ -94,15 +99,67 @@ class MainActivity : ComponentActivity() {
             .sortedBy { it.label.lowercase() }
             .toList()
     }
+
+    private fun prepareApks(app: InstalledApp, onComplete: (String) -> Unit) {
+        Thread {
+            val result = runCatching {
+                val safePackage = app.packageName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val workspace = File(filesDir, "prepared_apks/$safePackage")
+                if (workspace.exists() && !workspace.deleteRecursively()) {
+                    error("Could not clear the previous APK workspace.")
+                }
+                if (!workspace.mkdirs() && !workspace.isDirectory) {
+                    error("Could not create the private APK workspace.")
+                }
+
+                var totalBytes = 0L
+                val extractedFiles = app.apkPaths.mapIndexed { index, sourcePath ->
+                    val source = File(sourcePath)
+                    require(source.isFile && source.canRead()) {
+                        "APK source is missing or unreadable: $sourcePath"
+                    }
+
+                    val name = if (index == 0) "base.apk" else "split_$index.apk"
+                    val destination = File(workspace, name)
+                    val temporary = File(workspace, "$name.tmp")
+                    FileInputStream(source).use { input ->
+                        FileOutputStream(temporary).use { output ->
+                            input.copyTo(output, bufferSize = 64 * 1024)
+                            output.fd.sync()
+                        }
+                    }
+                    if (destination.exists() && !destination.delete()) {
+                        temporary.delete()
+                        error("Could not replace $name.")
+                    }
+                    if (!temporary.renameTo(destination)) {
+                        temporary.delete()
+                        error("Could not finalize $name.")
+                    }
+                    totalBytes += destination.length()
+                    destination.name
+                }
+
+                val sizeMb = totalBytes / (1024.0 * 1024.0)
+                "Prepared ${extractedFiles.size} APK file(s) (${String.format(Locale.US, "%.1f", sizeMb)} MB).\nSaved in CloneHub private storage:\n${workspace.absolutePath}"
+            }.getOrElse { error ->
+                "Extraction failed: ${error.message ?: error.javaClass.simpleName}"
+            }
+            runOnUiThread { onComplete(result) }
+        }.start()
+    }
 }
 
 @Composable
 private fun CloneHubHome(
     apps: List<InstalledApp>,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onPrepare: (InstalledApp, (String) -> Unit) -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
+    var preparingPackage by remember { mutableStateOf<String?>(null) }
+    var preparationResult by remember { mutableStateOf<String?>(null) }
     val filteredApps = remember(apps, search) {
         apps.filter {
             it.label.contains(search, ignoreCase = true) ||
@@ -116,7 +173,7 @@ private fun CloneHubHome(
     ) {
         Text("CloneHub", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Select an installed app to inspect its APK files.",
+            "Select an installed app to inspect or prepare its APK files.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Card(
@@ -164,7 +221,10 @@ private fun CloneHubHome(
                 items(filteredApps, key = { it.packageName }) { app ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = { selectedApp = app }
+                        onClick = {
+                            selectedApp = app
+                            preparationResult = null
+                        }
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -201,7 +261,7 @@ private fun CloneHubHome(
             }
         }
         Text(
-            "APK inspection only. Clone processing and installation are not implemented yet.",
+            "APK preparation only. Package modification, signing, and separate installation are not implemented yet.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -209,7 +269,9 @@ private fun CloneHubHome(
 
     selectedApp?.let { app ->
         AlertDialog(
-            onDismissRequest = { selectedApp = null },
+            onDismissRequest = {
+                if (preparingPackage != app.packageName) selectedApp = null
+            },
             title = { Text(app.label) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -217,15 +279,36 @@ private fun CloneHubHome(
                     Text("APK files found: ${app.apkPaths.size}")
                     app.apkPaths.forEachIndexed { index, path ->
                         Text(
-                            "${if (index == 0) "Base APK" else "Split APK ${index}"}: $path",
+                            "${if (index == 0) "Base APK" else "Split APK $index"}: $path",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    preparationResult?.let {
+                        Text(it, fontSize = 12.sp)
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { selectedApp = null }) { Text("Close") }
+                Button(
+                    enabled = preparingPackage == null,
+                    onClick = {
+                        preparingPackage = app.packageName
+                        preparationResult = "Copying APK files into CloneHub private storage..."
+                        onPrepare(app) { result ->
+                            preparationResult = result
+                            preparingPackage = null
+                        }
+                    }
+                ) {
+                    Text(if (preparingPackage == app.packageName) "Preparing..." else "Prepare APKs")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = preparingPackage != app.packageName,
+                    onClick = { selectedApp = null }
+                ) { Text("Close") }
             }
         )
     }
