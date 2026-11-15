@@ -4,14 +4,27 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 android {
-    namespace = "com.moldyhub.clonehub"
+    namespace = "com.moldyhub.fuku"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.moldyhub.clonehub"
+        applicationId = "com.moldyhub.fuku"
         minSdk = 26
         targetSdk = 35
         versionCode = 3
-        versionName = "0.3.0-alpha01"
+        versionName = "0.4.0-alpha01"
+    }
+    flavorDimensions += "edition"
+    productFlavors {
+        create("lite") {
+            dimension = "edition"
+            applicationIdSuffix = ".lite"
+            resValue("string", "app_name", "Fuku Lite")
+        }
+        create("universal") {
+            dimension = "edition"
+            applicationIdSuffix = ".universal"
+            resValue("string", "app_name", "Fuku Universal")
+        }
     }
     buildTypes {
         debug { isMinifyEnabled = false }
@@ -22,7 +35,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging {
         resources {
             excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
