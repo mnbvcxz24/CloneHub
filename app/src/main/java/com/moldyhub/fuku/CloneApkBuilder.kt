@@ -191,7 +191,7 @@ class CloneApkBuilder(private val context: Context) {
             val categories = filter.getElements("category")
             while (categories.hasNext()) {
                 val category = categories.next()
-                val name = category.searchAttributeByResourceId(0x01010003)?.getDataAsString()
+                val name = category.searchAttributeByResourceId(0x01010003)?.getValueString()
                 if (name == "android.intent.category.LAUNCHER") category.removeSelf()
             }
         }
