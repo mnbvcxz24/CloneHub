@@ -2,93 +2,35 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.hilt)
 }
-
 android {
-    namespace = "com.nextvm.app"
+    namespace = "com.moldyhub.clonehub"
     compileSdk = 35
-
     defaultConfig {
         applicationId = "com.moldyhub.clonehub"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0-alpha01"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 2
+        versionName = "0.2.0-alpha01"
     }
-
     buildTypes {
-        release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-        debug {
-            isMinifyEnabled = false
-        }
+        debug { isMinifyEnabled = false }
+        release { isMinifyEnabled = false }
     }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true }
 }
-
-ksp {
-    arg("correctErrorTypes", "true")
-}
-
 dependencies {
-    // All modules
-    implementation(project(":core:virtualization"))
-    implementation(project(":core:model"))
-    implementation(project(":core:hook"))
-    implementation(project(":core:binder"))
-    implementation(project(":core:apk"))
-    implementation(project(":core:sandbox"))
-    implementation(project(":core:designsystem"))
-    implementation(project(":core:common"))
-    implementation(project(":core:framework"))
-    implementation(project(":core:services"))
-    implementation(project(":feature:launcher"))
-    implementation(project(":feature:appmanager"))
-    implementation(project(":feature:settings"))
-    implementation(project(":feature:filemanager"))
-
-    // Compose
     implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons)
-    implementation(libs.compose.ui.tooling.preview)
-    implementation(libs.compose.animation)
-    implementation(libs.activity.compose)
-    debugImplementation(libs.compose.ui.tooling)
-
-    // DI + Nav + Lifecycle
-    implementation(libs.navigation.compose)
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.hilt.navigation)
-    implementation(libs.lifecycle.runtime)
-    implementation(libs.lifecycle.viewmodel)
-
-    // Core
-    implementation(libs.timber)
     implementation(libs.core.ktx)
+    implementation(libs.activity.compose)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
 }
