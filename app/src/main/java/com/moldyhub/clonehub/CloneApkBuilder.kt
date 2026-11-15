@@ -37,6 +37,7 @@ class CloneApkBuilder(private val context: Context) {
     }
 
     fun buildAndInstall(workspacePath: String, originalPackage: String, appLabel: String): CloneBuildOutcome {
+        require(originalPackage == "com.roblox.client") { "Fuku currently supports only the installed Roblox app." }
         require(originalPackage.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
             "This package name cannot be safely converted to a clone ID."
         }
@@ -94,7 +95,7 @@ class CloneApkBuilder(private val context: Context) {
             origPkg = originalPackage,
             clonePkg = clonePackage,
             cloneSuffix = suffix,
-            customAppLabel = "$appLabel (Clone $cloneIndex)"
+            customAppLabel = "Fuku " + cloneIndex.toString().padStart(2, '0')
         )
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)
