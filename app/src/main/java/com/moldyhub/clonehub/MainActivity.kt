@@ -84,7 +84,8 @@ class MainActivity : ComponentActivity() {
                             refreshWorkspaces()
                         },
                         onPrepare = ::prepareApks,
-                        onAnalyze = ::analyzeWorkspace
+                        onAnalyze = ::analyzeWorkspace,
+                        onClone = ::cloneWorkspace
                     )
                 }
             }
@@ -174,6 +175,18 @@ class MainActivity : ComponentActivity() {
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun cloneWorkspace(workspace: PreparedWorkspace, onComplete: (String) -> Unit) {
+        Thread {
+            val result = runCatching {
+                val outcome = CloneApkBuilder(this).buildAndInstall(workspace.directory, workspace.packageName, workspace.appLabel)
+                "Built ${outcome.packageName}. Android's installer session is ready; approve the install prompt if it appears."
+            }.getOrElse { error ->
+                "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
+            }
+            runOnUiThread { onComplete(result) }
+        }.start()
     }
 
     private fun analyzeWorkspace(workspace: PreparedWorkspace, onComplete: (String) -> Unit) {
@@ -283,7 +296,8 @@ private fun CloneHubHome(
     workspaces: List<PreparedWorkspace>,
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
-    onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit
+    onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
+    onClone: (PreparedWorkspace, (String) -> Unit) -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -292,6 +306,8 @@ private fun CloneHubHome(
     var selectedWorkspace by remember { mutableStateOf<PreparedWorkspace?>(null) }
     var analysisResult by remember { mutableStateOf<String?>(null) }
     var analyzingPackage by remember { mutableStateOf<String?>(null) }
+    var cloningPackage by remember { mutableStateOf<String?>(null) }
+    var cloneResult by remember { mutableStateOf<String?>(null) }
     val filteredApps = remember(apps, search) {
         apps.filter {
             it.label.contains(search, ignoreCase = true) ||
@@ -419,7 +435,7 @@ private fun CloneHubHome(
             }
         }
         Text(
-            "Prepared APKs are stored privately. Package modification, signing, and separate installation are not implemented yet.",
+            "Prepared APKs are stored privately. CloneHub can now rebuild a separate package and hand it to Android's installer.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -464,7 +480,7 @@ private fun CloneHubHome(
 
     selectedWorkspace?.let { workspace ->
         AlertDialog(
-            onDismissRequest = { if (analyzingPackage != workspace.packageName) selectedWorkspace = null },
+            onDismissRequest = { if (analyzingPackage != workspace.packageName && cloningPackage != workspace.packageName) selectedWorkspace = null },
             title = { Text(workspace.appLabel) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -474,25 +490,41 @@ private fun CloneHubHome(
                     Text("Integrity status: ${if (workspace.filesValid) "Files present" else "Missing or incomplete files"}")
                     Text("Saved path: ${workspace.directory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     analysisResult?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    cloneResult?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             },
             confirmButton = {
-                Button(
-                    enabled = workspace.filesValid && analyzingPackage == null,
-                    onClick = {
-                        analyzingPackage = workspace.packageName
-                        analysisResult = "Inspecting package metadata, components, permissions, and signing certificates..."
-                        onAnalyze(workspace) { result ->
-                            analysisResult = result
-                            analyzingPackage = null
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        enabled = workspace.filesValid && analyzingPackage == null && cloningPackage == null,
+                        onClick = {
+                            cloningPackage = workspace.packageName
+                            cloneResult = "Rewriting package metadata, signing APKs, and preparing Android installation..."
+                            onClone(workspace) { result ->
+                                cloneResult = result
+                                cloningPackage = null
+                            }
                         }
+                    ) {
+                        Text(if (cloningPackage == workspace.packageName) "Building clone..." else "Create & install clone")
                     }
-                ) {
-                    Text(if (analyzingPackage == workspace.packageName) "Analyzing..." else "Analyze APKs")
+                    TextButton(
+                        enabled = workspace.filesValid && analyzingPackage == null && cloningPackage == null,
+                        onClick = {
+                            analyzingPackage = workspace.packageName
+                            analysisResult = "Inspecting package metadata, components, permissions, and signing certificates..."
+                            onAnalyze(workspace) { result ->
+                                analysisResult = result
+                                analyzingPackage = null
+                            }
+                        }
+                    ) {
+                        Text(if (analyzingPackage == workspace.packageName) "Analyzing..." else "Analyze APKs")
+                    }
                 }
             },
             dismissButton = {
-                TextButton(enabled = analyzingPackage != workspace.packageName, onClick = { selectedWorkspace = null }) {
+                TextButton(enabled = analyzingPackage != workspace.packageName && cloningPackage != workspace.packageName, onClick = { selectedWorkspace = null }) {
                     Text("Close")
                 }
             }

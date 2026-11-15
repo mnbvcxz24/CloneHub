@@ -10,8 +10,8 @@ android {
         applicationId = "com.moldyhub.clonehub"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-alpha01"
+        versionCode = 3
+        versionName = "0.3.0-alpha01"
     }
     buildTypes {
         debug { isMinifyEnabled = false }
@@ -27,6 +27,9 @@ android {
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.core.ktx)
+    implementation(libs.arsclib)
+    implementation(libs.apksig)
+    implementation(libs.bouncycastle.bcpkix)
     implementation(libs.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)

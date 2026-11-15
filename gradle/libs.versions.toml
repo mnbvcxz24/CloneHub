@@ -16,8 +16,14 @@ timber = "5.0.1"
 datastore = "1.1.1"
 gson = "2.11.0"
 hiddenapibypass = "6.1"
+arsclib = "V1.4.0"
+apksig = "8.9.3"
+bouncycastle = "1.78.1"
 
 [libraries]
+arsclib = { group = "com.github.REAndroid", name = "ARSCLib", version.ref = "arsclib" }
+apksig = { group = "com.android.tools.build", name = "apksig", version.ref = "apksig" }
+bouncycastle-bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk18on", version.ref = "bouncycastle" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
