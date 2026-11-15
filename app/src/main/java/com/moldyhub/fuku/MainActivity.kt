@@ -231,8 +231,8 @@ class MainActivity : ComponentActivity() {
     private fun cloneWorkspace(workspace: PreparedWorkspace, onComplete: (String) -> Unit) {
         Thread {
             val result = runCatching {
-                val outcome = CloneApkBuilder(this).buildAndInstall(workspace.directory, workspace.packageName, workspace.appLabel, BuildConfig.FLAVOR == "universal")
-                "Built ${outcome.packageName}. Android's installer session is ready; approve the install prompt if it appears."
+                val outcome = CloneApkBuilder(this).buildAndExport(workspace.directory, workspace.packageName, workspace.appLabel)
+                "Saved successfully: ${outcome.fileName}\nLocation: ${outcome.savedLocation}"
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
             }
@@ -612,14 +612,14 @@ private fun FukuHome(
                         enabled = workspace.filesValid && analyzingPackage == null && cloningPackage == null,
                         onClick = {
                             cloningPackage = workspace.packageName
-                            cloneResult = "Rewriting package metadata, signing APKs, and preparing Android installation..."
+                            cloneResult = "Rewriting package metadata, signing, and saving the output..."
                             onClone(workspace) { result ->
                                 cloneResult = result
                                 cloningPackage = null
                             }
                         }
                     ) {
-                        Text(if (cloningPackage == workspace.packageName) "Building clone..." else "Create & install clone")
+                        Text(if (cloningPackage == workspace.packageName) "Exporting..." else "Create & save APK")
                     }
                     TextButton(
                         enabled = workspace.filesValid && analyzingPackage == null && cloningPackage == null,
