@@ -62,6 +62,7 @@ class ManifestAndArscMutator {
         private const val ATTR_CONTENT_AUTHORITY = 0x01010290
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
         private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
+        private const val ATTR_RESIZEABLE_ACTIVITY = 0x010103ee
 
         private const val TAG_APPLICATION = "application"
         private const val TAG_META_DATA = "meta-data"
@@ -157,6 +158,10 @@ class ManifestAndArscMutator {
         val appElement = CollectionUtil.toList(rootManifest.getElements(TAG_APPLICATION))
             .firstOrNull() ?: throw IOException("Missing <application> element in $baseApkFile")
 
+        // Allow Android native multi-window on devices that support it. This does not force freeform mode.
+        appElement.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
+            .setValueAsBoolean(true)
+
         // Do NOT force extractNativeLibs to false. If an app contains compressed .so files
         // (e.g. Telegram, Forkgram), forcing extractNativeLibs=false causes Android PackageInstaller
         // to fail with INSTALL_FAILED_INVALID_APK: Failed to extract native libraries, res=-2.
@@ -176,6 +181,11 @@ class ManifestAndArscMutator {
 
         // 6. Traverse all component elements inside <application>.
         for (comp in collectComponents(appElement)) {
+            if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
+                comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
+                    .setValueAsBoolean(true)
+            }
+
             // Roblox clone activities retain the requested landscape orientation.
             if (forceLandscape && comp.equalsName("activity")) {
                 comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
