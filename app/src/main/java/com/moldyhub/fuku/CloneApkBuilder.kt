@@ -1,13 +1,7 @@
 package com.moldyhub.fuku
 
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
-import android.os.Build
-import android.widget.Toast
 import com.android.apksig.ApkSigner
 import com.reandroid.apk.ApkModule
 import dev.cloneforge.patcher.manifest.ManifestAndArscMutator
@@ -25,32 +19,30 @@ import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.cert.X509Certificate
 import java.util.Date
+import android.content.ContentValues
+import android.os.Environment
+import android.provider.MediaStore
 import java.util.Properties
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
-data class CloneBuildOutcome(val packageName: String, val apkDirectory: String, val sessionId: Int)
+data class CloneBuildOutcome(val packageName: String, val fileName: String, val savedLocation: String)
 
 class CloneApkBuilder(private val context: Context) {
     companion object {
         private const val KEYSTORE_PASSWORD = "fuku-local-signing-key"
-        private const val INSTALL_ACTION = "com.moldyhub.fuku.CLONE_INSTALL_STATUS"
         private const val MAX_CLONE_INDEX = 999
         private const val RUNTIME_SETUP_ACTIVITY = "com.fuku.cloneruntime.RuntimeEntryActivity"
         private const val RUNTIME_OVERLAY_SERVICE = "com.fuku.cloneruntime.RuntimeOverlayService"
         private const val RUNTIME_LAUNCHER_METADATA = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER"
     }
 
-    fun buildAndInstall(workspacePath: String, originalPackage: String, appLabel: String, allowAnyApp: Boolean = false): CloneBuildOutcome {
-        if (!allowAnyApp) require(originalPackage == "com.roblox.client") { "Fuku Lite currently supports only the installed Roblox app." }
+    fun buildAndExport(workspacePath: String, originalPackage: String, appLabel: String): CloneBuildOutcome {
         require(originalPackage.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
             "This package name cannot be safely converted to a clone ID."
         }
         require(originalPackage.length <= 220) { "The source package name is too long to create a separate package ID." }
-        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
-            error("Allow Fuku to install unknown apps in Android Settings, then try again.")
-        }
 
         val workspace = File(workspacePath)
         require(workspace.isDirectory) { "Prepared APK workspace is missing." }
@@ -138,31 +130,57 @@ class CloneApkBuilder(private val context: Context) {
         }
         require(signedApks.all { it.isFile && it.length() > 0L }) { "One or more signed APKs are empty." }
 
-        val installer = context.packageManager.packageInstaller
-        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-            setAppPackageName(clonePackage)
-            setSize(signedApks.sumOf { it.length() })
+        val singleApk = signedApks.size == 1
+        val extension = if (singleApk) ".apk" else ".zip"
+        val safeLabel = appLabel.replace(Regex("[^A-Za-z0-9._-]"), "_").take(48).ifBlank { "App" }
+        val fileName = "${safeLabel}_Fuku_${cloneIndex.toString().padStart(3, '0')}$extension"
+        val savedLocation = saveExport(fileName, singleApk, signedApks)
+        outputDir.deleteRecursively()
+        return CloneBuildOutcome(clonePackage, fileName, savedLocation)
+    }
+
+    private fun saveExport(fileName: String, singleApk: Boolean, signedApks: List<File>): String {
+        val mimeType = if (singleApk) "application/vnd.android.package-archive" else "application/zip"
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Fuku")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: error("Could not create export in Downloads/Fuku.")
+            try {
+                context.contentResolver.openOutputStream(uri, "w")?.use { writeExport(it, singleApk, signedApks) }
+                    ?: error("Could not open exported file.")
+                context.contentResolver.update(uri, ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }, null, null)
+                return "Downloads/Fuku/$fileName"
+            } catch (error: Throwable) {
+                context.contentResolver.delete(uri, null, null)
+                throw error
+            }
         }
-        val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            signedApks.forEach { apk ->
-                apk.inputStream().use { input ->
-                    session.openWrite(apk.name, 0, apk.length()).use { output ->
-                        input.copyTo(output, 64 * 1024)
-                        session.fsync(output)
-                    }
+        val folder = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Fuku")
+        if (!folder.exists() && !folder.mkdirs()) error("Could not create Fuku export folder.")
+        val outputFile = File(folder, fileName)
+        FileOutputStream(outputFile).use { writeExport(it, singleApk, signedApks) }
+        return outputFile.absolutePath
+    }
+
+    private fun writeExport(output: java.io.OutputStream, singleApk: Boolean, signedApks: List<File>) {
+        if (singleApk) {
+            signedApks.single().inputStream().use { it.copyTo(output, 64 * 1024) }
+        } else {
+            ZipOutputStream(output).use { zip ->
+                signedApks.forEach { apk ->
+                    zip.putNextEntry(ZipEntry(apk.name))
+                    apk.inputStream().use { it.copyTo(zip, 64 * 1024) }
+                    zip.closeEntry()
                 }
             }
-            val callback = Intent(context, CloneInstallReceiver::class.java)
-                .setAction(INSTALL_ACTION)
-                .putExtra(PackageInstaller.EXTRA_SESSION_ID, sessionId)
-                .putExtra("clone_package", clonePackage)
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-            val pendingIntent = PendingIntent.getBroadcast(context, sessionId, callback, flags)
-            session.commit(pendingIntent.intentSender)
         }
-        return CloneBuildOutcome(clonePackage, outputDir.absolutePath, sessionId)
     }
 
     private fun readMainActivityClass(apkFile: File, packageName: String): String {
@@ -368,26 +386,3 @@ class CloneApkBuilder(private val context: Context) {
     }
 }
 
-class CloneInstallReceiver : BroadcastReceiver() {
-    @Suppress("DEPRECATION")
-    override fun onReceive(context: Context, intent: Intent) {
-        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-        val packageName = intent.getStringExtra("clone_package") ?: "clone"
-        when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirmation = if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-                } else {
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT) as? Intent
-                }
-                confirmation?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (confirmation != null) context.startActivity(confirmation)
-            }
-            PackageInstaller.STATUS_SUCCESS -> Toast.makeText(context, "Installed $packageName as a separate app.", Toast.LENGTH_LONG).show()
-            else -> {
-                val detail = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
-                Toast.makeText(context, "Clone install failed ($status): $detail", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-}

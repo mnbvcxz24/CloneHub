@@ -73,14 +73,12 @@ class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
     private var installedClones by mutableStateOf<List<InstalledClone>>(emptyList())
-    private var showRequirements by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshApps()
         refreshWorkspaces()
         refreshClones()
-        showRequirements = !getSharedPreferences("fuku_setup", MODE_PRIVATE).getBoolean("requirements_seen", false)
         setContent {
             MaterialTheme {
                 Surface(
@@ -102,12 +100,6 @@ class MainActivity : ComponentActivity() {
                         onAnalyze = ::analyzeWorkspace,
                         onClone = ::cloneWorkspace,
                         onCloneApp = ::cloneApp,
-                        showRequirements = showRequirements,
-                        onDismissRequirements = {
-                            showRequirements = false
-                            getSharedPreferences("fuku_setup", MODE_PRIVATE).edit().putBoolean("requirements_seen", true).apply()
-                        },
-                        onOpenInstallSettings = ::openInstallSettings
                     )
                 }
             }
@@ -119,7 +111,6 @@ class MainActivity : ComponentActivity() {
         refreshApps()
         refreshWorkspaces()
         refreshClones()
-        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) showRequirements = true
     }
 
     private fun refreshClones() {
@@ -143,12 +134,6 @@ class MainActivity : ComponentActivity() {
         installedClones.forEachIndexed { index, clone -> FloatingWindowService.open(this, clone.packageName, index) }
     }
 
-    private fun openInstallSettings() {
-        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-        }
-    }
-
     private fun cloneApp(app: InstalledApp, onComplete: (String) -> Unit) {
         prepareApks(app) { prepared ->
             if (!prepared.startsWith("Prepared and verified")) {
@@ -169,7 +154,6 @@ class MainActivity : ComponentActivity() {
         installedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
             .asSequence()
             .filter { it.packageName != packageName }
-            .filter { BuildConfig.FLAVOR != "lite" || it.packageName == "com.roblox.client" }
             .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
             .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
             .map { info ->
@@ -369,9 +353,6 @@ private fun FukuHome(
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
     onClone: (PreparedWorkspace, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, (String) -> Unit) -> Unit,
-    showRequirements: Boolean,
-    onDismissRequirements: () -> Unit,
-    onOpenInstallSettings: () -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -393,9 +374,9 @@ private fun FukuHome(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(if (BuildConfig.FLAVOR == "lite") "Fuku Lite" else "Fuku Universal", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Fuku Cloner", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
-            if (BuildConfig.FLAVOR == "lite") "Choose Roblox and tap Clone. Fuku handles preparation automatically." else "Select an installed app to inspect or prepare its APK files.",
+            "Select an installed app, create a clone, and save the signed output.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Card(
@@ -461,9 +442,9 @@ private fun FukuHome(
                 }
             }
         }
-        Text(if (BuildConfig.FLAVOR == "lite") "Roblox" else "Installed apps", fontWeight = FontWeight.SemiBold)
+        Text("Installed apps", fontWeight = FontWeight.SemiBold)
         Text(
-            if (BuildConfig.FLAVOR == "lite") "One-tap clone" else "${apps.size} launchable apps",
+            "${apps.size} launchable apps",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -659,30 +640,6 @@ private fun FukuHome(
                 TextButton(enabled = analyzingPackage != workspace.packageName && cloningPackage != workspace.packageName, onClick = { selectedWorkspace = null }) {
                     Text("Close")
                 }
-            }
-        )
-    }
-    if (showRequirements) {
-        AlertDialog(
-            onDismissRequest = onDismissRequirements,
-            title = { Text("Fuku setup requirements") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Before cloning, review these Android requirements:")
-                    Text("1. Install unknown apps — allow Fuku to request installation of the separate clone.")
-                    Text("2. Android install approval — confirm the system installer prompt for each clone.")
-                    Text("3. App visibility — Fuku lists launchable apps it can see. This is declared in the app manifest, not a runtime permission prompt.")
-                    Text("The current flow does not require accessibility, contacts, storage, or device-admin permissions.")
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    onDismissRequirements()
-                    onOpenInstallSettings()
-                }) { Text("Open install permission") }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismissRequirements) { Text("Later") }
             }
         )
     }
