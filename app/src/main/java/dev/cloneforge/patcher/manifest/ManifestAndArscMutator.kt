@@ -26,7 +26,7 @@ data class MutationResult(
 )
 
 /**
- * Binary Android manifest mutation engine for CloneHub's first-generation APK cloner.
+ * Binary Android manifest mutation engine for Fuku's first-generation APK cloner.
  *
  * Implemented against the real ARSCLib V1.4.0 API:
  *  - ApkModule.loadApkFile(File), getAndroidManifest(), writeApk(File)
@@ -40,7 +40,7 @@ data class MutationResult(
 /*
  * Derived from the manifest mutation implementation in CloniX.
  * See THIRD_PARTY_NOTICES.md for attribution and GPL-3.0 details.
- * CloneHub excludes runtime payload injection and identity hooks.
+ * Fuku excludes runtime payload injection and identity hooks.
  */
 class ManifestAndArscMutator {
 
