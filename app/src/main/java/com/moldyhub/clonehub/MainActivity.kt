@@ -41,6 +41,8 @@ import androidx.core.graphics.drawable.toBitmap
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.security.MessageDigest
+import java.util.Properties
 import java.util.Locale
 
 private data class InstalledApp(
@@ -100,6 +102,21 @@ class MainActivity : ComponentActivity() {
             .toList()
     }
 
+    private data class ApkCopyRecord(val name: String, val bytes: Long, val sha256: String)
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private fun prepareApks(app: InstalledApp, onComplete: (String) -> Unit) {
         Thread {
             val result = runCatching {
@@ -136,12 +153,39 @@ class MainActivity : ComponentActivity() {
                         temporary.delete()
                         error("Could not finalize $name.")
                     }
+                    val copiedHash = sha256(destination)
+                    val sourceHash = sha256(source)
+                    require(copiedHash == sourceHash) {
+                        "Integrity check failed for ${destination.name}."
+                    }
                     totalBytes += destination.length()
-                    destination.name
+                    ApkCopyRecord(destination.name, destination.length(), copiedHash)
+                }
+
+                val metadata = Properties().apply {
+                    setProperty("packageName", app.packageName)
+                    setProperty("appLabel", app.label)
+                    setProperty("createdAtEpochMs", System.currentTimeMillis().toString())
+                    setProperty("apkCount", extractedFiles.size.toString())
+                    extractedFiles.forEachIndexed { index, record ->
+                        setProperty("apk.$index.name", record.name)
+                        setProperty("apk.$index.bytes", record.bytes.toString())
+                        setProperty("apk.$index.sha256", record.sha256)
+                    }
+                }
+                val metadataTemp = File(workspace, "workspace.properties.tmp")
+                val metadataFile = File(workspace, "workspace.properties")
+                FileOutputStream(metadataTemp).use { output ->
+                    metadata.store(output, "CloneHub prepared APK workspace")
+                    output.fd.sync()
+                }
+                if (!metadataTemp.renameTo(metadataFile)) {
+                    metadataTemp.delete()
+                    error("Could not save APK workspace metadata.")
                 }
 
                 val sizeMb = totalBytes / (1024.0 * 1024.0)
-                "Prepared ${extractedFiles.size} APK file(s) (${String.format(Locale.US, "%.1f", sizeMb)} MB).\nSaved in CloneHub private storage:\n${workspace.absolutePath}"
+                "Prepared and verified ${extractedFiles.size} APK file(s) (${String.format(Locale.US, "%.1f", sizeMb)} MB).\nSHA-256 checks passed for every file.\nWorkspace metadata saved.\nPrivate storage:\n${workspace.absolutePath}"
             }.getOrElse { error ->
                 "Extraction failed: ${error.message ?: error.javaClass.simpleName}"
             }
