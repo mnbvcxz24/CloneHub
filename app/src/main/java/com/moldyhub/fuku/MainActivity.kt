@@ -1,7 +1,9 @@
 package com.moldyhub.fuku
 
+import android.app.ActivityOptions
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.content.Intent
 import android.net.Uri
@@ -16,9 +18,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
@@ -56,6 +61,13 @@ private data class InstalledApp(
     val apkPaths: List<String>
 )
 
+private data class InstalledClone(
+    val label: String,
+    val packageName: String,
+    val icon: Drawable,
+    val cloneIndex: Int
+)
+
 private data class PreparedWorkspace(
     val packageName: String,
     val appLabel: String,
@@ -68,12 +80,14 @@ private data class PreparedWorkspace(
 
 class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
+    private var installedClones by mutableStateOf<List<InstalledClone>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
     private var showRequirements by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshApps()
+        refreshClones()
         refreshWorkspaces()
         showRequirements = !getSharedPreferences("fuku_setup", MODE_PRIVATE).getBoolean("requirements_seen", false)
         setContent {
@@ -84,15 +98,18 @@ class MainActivity : ComponentActivity() {
                 ) {
                     FukuHome(
                         apps = installedApps,
+                        clones = installedClones,
                         workspaces = preparedWorkspaces,
                         onRefresh = {
                             refreshApps()
+                            refreshClones()
                             refreshWorkspaces()
                         },
                         onPrepare = ::prepareApks,
                         onAnalyze = ::analyzeWorkspace,
                         onClone = ::cloneWorkspace,
                         onCloneApp = ::cloneApp,
+                        onOpenCloneFloating = ::openCloneFloating,
                         showRequirements = showRequirements,
                         onDismissRequirements = {
                             showRequirements = false
@@ -155,6 +172,52 @@ class MainActivity : ComponentActivity() {
             }
             .sortedBy { it.label.lowercase() }
             .toList()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun refreshClones() {
+        val clonePattern = Regex("^.+\\.fuku\\.c(\\d{3})$")
+        installedClones = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            .asSequence()
+            .mapNotNull { info ->
+                val match = clonePattern.matchEntire(info.packageName) ?: return@mapNotNull null
+                if (packageManager.getLaunchIntentForPackage(info.packageName) == null) return@mapNotNull null
+                InstalledClone(
+                    label = packageManager.getApplicationLabel(info).toString(),
+                    packageName = info.packageName,
+                    icon = packageManager.getApplicationIcon(info),
+                    cloneIndex = match.groupValues[1].toInt()
+                )
+            }
+            .sortedBy { it.cloneIndex }
+            .toList()
+    }
+
+    private fun openCloneFloating(clonePackage: String, cloneIndex: Int) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(clonePackage)
+        if (launchIntent == null) {
+            refreshClones()
+            return
+        }
+
+        // Each clone has its own package/task affinity. NEW_TASK launches that
+        // clone as an independent Android task; launch bounds request freeform mode.
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val metrics = resources.displayMetrics
+        val margin = (24f * metrics.density).toInt()
+        val width = (metrics.widthPixels * 0.78f).toInt()
+        val height = (metrics.heightPixels * 0.62f).toInt()
+        val maxX = (metrics.widthPixels - width - margin).coerceAtLeast(margin)
+        val x = if (cloneIndex % 2 == 0) maxX else margin
+        val y = margin + (((cloneIndex - 1).coerceAtLeast(0) % 3) * (28f * metrics.density).toInt())
+        val bounds = Rect(
+            x,
+            y,
+            (x + width).coerceAtMost(metrics.widthPixels - margin),
+            (y + height).coerceAtMost(metrics.heightPixels - margin)
+        )
+        val options = ActivityOptions.makeBasic().setLaunchBounds(bounds)
+        startActivity(launchIntent, options.toBundle())
     }
 
     private fun refreshWorkspaces() {
@@ -329,12 +392,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun FukuHome(
     apps: List<InstalledApp>,
+    clones: List<InstalledClone>,
     workspaces: List<PreparedWorkspace>,
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
     onClone: (PreparedWorkspace, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, (String) -> Unit) -> Unit,
+    onOpenCloneFloating: (String, Int) -> Unit,
     showRequirements: Boolean,
     onDismissRequirements: () -> Unit,
     onOpenInstallSettings: () -> Unit
@@ -378,6 +443,71 @@ private fun FukuHome(
                     innerTextField()
                 }
             )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Floating shell", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${clones.size} installed Fuku clone(s)",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            TextButton(onClick = onRefresh) { Text("Refresh") }
+        }
+        if (clones.isEmpty()) {
+            Text(
+                "Your installed clones will appear here. Tap Open floating to request a separate Android window.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 168.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(clones, key = { it.packageName }) { clone ->
+                    Card(modifier = Modifier.width(224.dp)) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                val cloneIcon = remember(clone.packageName) {
+                                    clone.icon.toBitmap(width = 80, height = 80).asImageBitmap()
+                                }
+                                Image(
+                                    bitmap = cloneIcon,
+                                    contentDescription = "${clone.label} icon",
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(clone.label, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        clone.packageName,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = { onOpenCloneFloating(clone.packageName, clone.cloneIndex) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Open floating")
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (BuildConfig.FLAVOR != "lite") Row(
             modifier = Modifier.fillMaxWidth(),
