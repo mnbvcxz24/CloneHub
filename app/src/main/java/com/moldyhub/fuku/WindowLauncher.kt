@@ -1,13 +1,10 @@
 package com.moldyhub.fuku
 
-import android.app.ActivityOptions
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.os.Build
-import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.WindowManager
 
@@ -48,48 +45,6 @@ object WindowLauncher {
             }
             .sortedBy { it.packageName }
             .toList()
-
-    /**
-     * Starts [packageName] in a floating window. [slot] offsets the window so several windows
-     * opened together do not sit exactly on top of each other.
-     * Returns null on success, or a short error message.
-     */
-    fun launchInWindow(context: Context, packageName: String, slot: Int): String? {
-        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-            ?: return "$packageName has no launchable screen."
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        return try {
-            val options = ActivityOptions.makeBasic().setLaunchBounds(windowBounds(context, slot))
-            context.startActivity(intent, options.toBundle())
-            null
-        } catch (e: Exception) {
-            "Could not open $packageName: ${e.message ?: e.javaClass.simpleName}"
-        }
-    }
-
-    /** Opens every clone in its own cascaded window. Returns the first error, if any. */
-    fun launchAllInWindows(context: Context, clones: List<InstalledClone>): String? {
-        var firstError: String? = null
-        clones.forEachIndexed { index, clone ->
-            val error = launchInWindow(context, clone.packageName, index)
-            if (error != null && firstError == null) firstError = error
-        }
-        return firstError
-    }
-
-    /**
-     * Best-effort guess at whether this device will honour floating windows. Android does not
-     * offer a reliable public check, so this can be wrong in both directions; it is only used to
-     * show a hint, never to block launching.
-     */
-    fun freeformLikelySupported(context: Context): Boolean {
-        val pm = context.packageManager
-        if (pm.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)) return true
-        if (pm.hasSystemFeature("android.hardware.type.pc")) return true
-        return runCatching {
-            Settings.Global.getInt(context.contentResolver, "enable_freeform_support", 0) != 0
-        }.getOrDefault(false)
-    }
 
     internal fun displayBounds(context: Context): Rect {
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager

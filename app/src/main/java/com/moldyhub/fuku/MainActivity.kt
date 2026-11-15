@@ -30,7 +30,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,7 +73,6 @@ class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
     private var installedClones by mutableStateOf<List<InstalledClone>>(emptyList())
-    private var useFukuWindows by mutableStateOf(true)
     private var showRequirements by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,7 +80,6 @@ class MainActivity : ComponentActivity() {
         refreshApps()
         refreshWorkspaces()
         refreshClones()
-        useFukuWindows = getSharedPreferences("fuku_setup", MODE_PRIVATE).getBoolean("use_fuku_windows", true)
         showRequirements = !getSharedPreferences("fuku_setup", MODE_PRIVATE).getBoolean("requirements_seen", false)
         setContent {
             MaterialTheme {
@@ -94,9 +91,6 @@ class MainActivity : ComponentActivity() {
                         apps = installedApps,
                         workspaces = preparedWorkspaces,
                         clones = installedClones,
-                        freeformLikely = WindowLauncher.freeformLikelySupported(this@MainActivity),
-                        useFukuWindows = useFukuWindows,
-                        onToggleFukuWindows = ::setUseFukuWindows,
                         onOpenCloneInWindow = ::openCloneInWindow,
                         onOpenAllClonesInWindows = ::openAllClonesInWindows,
                         onRefresh = {
@@ -132,11 +126,6 @@ class MainActivity : ComponentActivity() {
         installedClones = WindowLauncher.findClones(packageManager)
     }
 
-    private fun setUseFukuWindows(enabled: Boolean) {
-        useFukuWindows = enabled
-        getSharedPreferences("fuku_setup", MODE_PRIVATE).edit().putBoolean("use_fuku_windows", enabled).apply()
-    }
-
     /** Fuku's own overlay windows need "Display over other apps"; send the user to grant it. */
     private fun ensureOverlayPermission(): Boolean {
         if (FloatingWindowService.canDrawOverlays(this)) return true
@@ -146,25 +135,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openCloneInWindow(clone: InstalledClone, slot: Int) {
-        if (useFukuWindows) {
-            if (ensureOverlayPermission()) FloatingWindowService.open(this, clone.packageName, slot)
-            return
-        }
-        WindowLauncher.launchInWindow(this, clone.packageName, slot)?.let {
-            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
-        }
+        if (ensureOverlayPermission()) FloatingWindowService.open(this, clone.packageName, slot)
     }
 
     private fun openAllClonesInWindows() {
-        if (useFukuWindows) {
-            if (!ensureOverlayPermission()) return
-            installedClones.forEachIndexed { index, clone -> FloatingWindowService.open(this, clone.packageName, index) }
-            return
-        }
-        // Start every window from this one tap so Android treats them all as user-initiated.
-        WindowLauncher.launchAllInWindows(this, installedClones)?.let {
-            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
-        }
+        if (!ensureOverlayPermission()) return
+        installedClones.forEachIndexed { index, clone -> FloatingWindowService.open(this, clone.packageName, index) }
     }
 
     private fun openInstallSettings() {
@@ -386,9 +362,6 @@ private fun FukuHome(
     apps: List<InstalledApp>,
     workspaces: List<PreparedWorkspace>,
     clones: List<InstalledClone>,
-    freeformLikely: Boolean,
-    useFukuWindows: Boolean,
-    onToggleFukuWindows: (Boolean) -> Unit,
     onOpenCloneInWindow: (InstalledClone, Int) -> Unit,
     onOpenAllClonesInWindows: () -> Unit,
     onRefresh: () -> Unit,
@@ -551,26 +524,6 @@ private fun FukuHome(
                 }
                 if (clones.size > 1) Button(onClick = onOpenAllClonesInWindows) { Text("Open all") }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Fuku floating windows (root)", fontSize = 13.sp)
-                    Text(
-                        if (useFukuWindows) "Uses root. Works without freeform mode." else "Uses Android's freeform windows.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = useFukuWindows, onCheckedChange = onToggleFukuWindows)
-            }
-            if (!useFukuWindows && !freeformLikely) Text(
-                "Floating windows may not be enabled on this device. Turn on \"Enable freeform windows\" in Developer options (or use a desktop-mode display), otherwise clones open full screen.",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)

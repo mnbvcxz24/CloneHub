@@ -20,12 +20,11 @@ Use only apps and APKs you are authorized to modify. Fuku does not bypass app pr
 
 ## Floating windows
 
-Installed clones appear under "Your clones" on the home screen. The switch there picks the window mode:
+Installed clones appear under "Your clones" on the home screen. Fuku launches clones in its root-powered floating-window mode:
 
 - **Fuku floating windows (root)** — Fuku draws its own draggable, resizable window with minimize, maximize and close buttons. Each window shows one clone on a virtual display created by Fuku. The clone is started on that display, and touches are forwarded to it, through `su`, so root is required. Allow "Display over other apps" for Fuku when asked. Opening a clone this way restarts it, and closing the window stops it.
-- **Android freeform windows** — asks Android to open the clone with window bounds. This only floats on devices where freeform or desktop windowing is enabled.
 
-The clones are not modified for either mode.
+The clone packages remain separately installed apps; Fuku hosts their displays in its own overlay windows.
 
 ## Build
 
