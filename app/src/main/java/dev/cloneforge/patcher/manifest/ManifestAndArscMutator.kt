@@ -62,7 +62,8 @@ class ManifestAndArscMutator {
         private const val ATTR_CONTENT_AUTHORITY = 0x01010290
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
         private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
-        private const val ATTR_RESIZEABLE_ACTIVITY = 0x010103ee
+        private const val ATTR_RESIZEABLE_ACTIVITY = 0x010104f6
+        private const val ATTR_SUPPORTS_PICTURE_IN_PICTURE = 0x010104f7
 
         private const val TAG_APPLICATION = "application"
         private const val TAG_META_DATA = "meta-data"
@@ -184,6 +185,15 @@ class ManifestAndArscMutator {
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
+            }
+
+            // Advertise native PiP capability on real app activities. This is a prerequisite,
+            // not an automatic PiP trigger: the activity still needs runtime code to enter PiP.
+            if (comp.equalsName("activity")) {
+                comp.getOrCreateAndroidAttribute(
+                    "supportsPictureInPicture",
+                    ATTR_SUPPORTS_PICTURE_IN_PICTURE
+                ).setValueAsBoolean(true)
             }
 
             // Roblox clone activities retain the requested landscape orientation.
