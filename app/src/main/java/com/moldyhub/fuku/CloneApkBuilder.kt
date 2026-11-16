@@ -154,10 +154,10 @@ class CloneApkBuilder(private val context: Context) {
         require(signedApks.all { it.isFile && it.length() > 0L }) { "One or more signed APKs are empty." }
 
         val singleApk = signedApks.size == 1
-        val safeLabel = appLabel.replace(Regex("[^A-Za-z0-9._-]"), "_").take(48).ifBlank { "App" }
         val number = cloneIndex.toString().padStart(3, '0')
         val extension = if (singleApk) ".apk" else ".zip"
-        val fileName = "${safeLabel}_Fuku_$number$extension"
+        val cloneName = "Fuku $number"
+        val fileName = "$cloneName$extension"
         val savedLocation = if (mode == CloneOutputMode.INSTALL) {
             installApks(clonePackage, signedApks)
             "Android package installer"
@@ -166,7 +166,7 @@ class CloneApkBuilder(private val context: Context) {
         }
         outputDir.deleteRecursively()
         staging.deleteRecursively()
-        return CloneBuildOutcome(clonePackage, if (mode == CloneOutputMode.INSTALL) "$safeLabel Fuku $number" else fileName, savedLocation)
+        return CloneBuildOutcome(clonePackage, cloneName, savedLocation)
     }
 
     private fun installApks(clonePackage: String, signedApks: List<File>) {
@@ -280,7 +280,7 @@ class CloneApkBuilder(private val context: Context) {
         setupActivity.getOrCreateAndroidAttribute("exported", 0x01010010).setValueAsBoolean(true)
         setupActivity.getOrCreateAndroidAttribute("theme", 0x01010000)
             .setValueAsString("@android:style/Theme.Material.Light.NoActionBar")
-        setupActivity.getOrCreateAndroidAttribute("label", 0x01010001).setValueAsString("Fuku Setup")
+        setupActivity.getOrCreateAndroidAttribute("label", 0x01010001).setValueAsString("Fuku " + clonePackage.substringAfterLast(".c").padStart(3, '0'))
         val launcherFilter = setupActivity.newElement("intent-filter")
         launcherFilter.newElement("action").getOrCreateAndroidAttribute("name", 0x01010003)
             .setValueAsString("android.intent.action.MAIN")
