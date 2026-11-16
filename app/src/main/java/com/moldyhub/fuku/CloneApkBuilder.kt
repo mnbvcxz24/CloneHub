@@ -110,8 +110,6 @@ class CloneApkBuilder(private val context: Context) {
             copy
         }
 
-        val originalLauncherClass = readMainActivityClass(stagedApks.first(), originalPackage)
-
         val mutator = ManifestAndArscMutator()
         val mutation = mutator.mutateBaseApk(
             baseApkFile = stagedApks.first(),
@@ -124,7 +122,6 @@ class CloneApkBuilder(private val context: Context) {
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)
         require(mutation.mutatedPackage == clonePackage) { "Manifest package mutation did not complete." }
-        injectCloneRuntime(stagedApks.first(), originalLauncherClass, clonePackage)
 
         val authorities = mutation.authorityMap.toMutableMap()
         val permissions = mutation.permissionMap.toMutableMap()
