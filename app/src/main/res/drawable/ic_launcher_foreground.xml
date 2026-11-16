@@ -1,27 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Rear tile: the duplicate/instance motif -->
-    <path
-        android:fillColor="#22D3EE"
-        android:pathData="M31,23
-            C31,19.7 33.7,17 37,17
-            H66 C69.3,17 72,19.7 72,23
-            V57 C72,60.3 69.3,63 66,63
-            H37 C33.7,63 31,60.3 31,57 Z" />
-    <!-- Front tile -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M39,34
-            C39,30.7 41.7,28 45,28
-            H72 C75.3,28 78,30.7 78,34
-            V73 C78,76.3 75.3,79 72,79
-            H45 C41.7,79 39,76.3 39,73 Z" />
-    <!-- F mark -->
-    <path
-        android:fillColor="#4F46E5"
-        android:pathData="M49,42 H69 V49 H56 V55 H67 V62 H56 V72 H49 Z" />
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5" android:strokeLineCap="square" android:strokeLineJoin="miter"
+        android:pathData="M17,34 H31 M17,34 V54 M17,44 H28
+                          M38,34 V48 Q38,54 45,54 Q52,54 52,48 V34
+                          M60,34 V54 M60,44 L75,34 M60,44 L75,54
+                          M83,34 V48 Q83,54 90,54 Q97,54 97,48 V34"/>
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2" android:strokeLineCap="square" android:strokeLineJoin="miter"
+        android:pathData="M23,68 V79 M23,68 H29 M23,73 H28
+                          M35,68 V79 H42
+                          M48,68 V79 M48,68 H55 M48,73 H54 M48,79 H55
+                          M62,68 V79 M62,68 H69 M62,73 H68 M62,79 H69
+                          M76,68 V79 M76,68 H83 M76,73 H82 M76,79 H83
+                          M90,68 V79 M90,68 H97 M90,73 H96 M90,79 H97"/>
 </vector>
