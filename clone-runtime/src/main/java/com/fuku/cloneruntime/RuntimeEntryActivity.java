@@ -20,6 +20,7 @@ public final class RuntimeEntryActivity extends Activity {
     private static final String META_LAUNCHER = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER";
     private Button permissionButton;
     private Button launchButton;
+    private String launchError;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -87,6 +88,16 @@ public final class RuntimeEntryActivity extends Activity {
         noteParams.topMargin = dp(20);
         root.addView(note, noteParams);
 
+        if (launchError != null && !launchError.isEmpty()) {
+            TextView error = new TextView(this);
+            error.setText("The cloned app could not start: " + launchError);
+            error.setTextColor(0xFFFF8A80);
+            error.setTextSize(13);
+            LinearLayout.LayoutParams errorParams = new LinearLayout.LayoutParams(-1, -2);
+            errorParams.topMargin = dp(16);
+            root.addView(error, errorParams);
+        }
+
         setContentView(root);
         updatePermissionState();
     }
@@ -120,7 +131,9 @@ public final class RuntimeEntryActivity extends Activity {
             startActivity(game);
             finish();
         } catch (Exception error) {
-            Toast.makeText(this, "Could not start the cloned app: " + error.getMessage(),
+            launchError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            showSetup();
+            Toast.makeText(this, "Could not start the cloned app: " + launchError,
                     Toast.LENGTH_LONG).show();
         }
     }
