@@ -10,8 +10,9 @@ import java.lang.ref.WeakReference;
 
 /**
  * Tracks the currently resumed app Activity and prepares native Android PiP.
- * Android 12+ can auto-enter PiP when the user leaves the app. On older
- * releases the in-clone floating control requests PiP explicitly.
+ * Android 12+ can auto-enter PiP when the user leaves the app. Older
+ * releases require source-app or user-flow support to explicitly enter PiP;
+ * this runtime intentionally does not create a custom overlay control.
  */
 final class PipRuntimeController {
     private static WeakReference<Activity> currentActivity = new WeakReference<>(null);
