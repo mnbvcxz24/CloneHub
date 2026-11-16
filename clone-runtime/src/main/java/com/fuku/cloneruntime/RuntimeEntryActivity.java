@@ -48,7 +48,7 @@ public final class RuntimeEntryActivity extends Activity {
         root.setBackgroundColor(0xFF10131A);
 
         TextView title = new TextView(this);
-        title.setText("Fuku Clone Setup");
+        title.setText(getPackageManager().getApplicationLabel(getApplicationInfo()));
         title.setTextColor(0xFFFFFFFF);
         title.setTextSize(25);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -74,7 +74,7 @@ public final class RuntimeEntryActivity extends Activity {
         });
 
         launchButton = new Button(this);
-        launchButton.setText("Continue to Roblox");
+        launchButton.setText("Continue");
         LinearLayout.LayoutParams launchParams = new LinearLayout.LayoutParams(-1, -2);
         launchParams.topMargin = dp(10);
         root.addView(launchButton, launchParams);
