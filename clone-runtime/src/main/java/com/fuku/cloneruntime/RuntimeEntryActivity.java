@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -26,7 +27,7 @@ public final class RuntimeEntryActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         if (getPreferences(MODE_PRIVATE).getBoolean("complete", false)
-                && Settings.canDrawOverlays(this)) {
+                && (Build.VERSION.SDK_INT >= 31 || Settings.canDrawOverlays(this))) {
             launchOriginalApp();
             return;
         }
@@ -55,7 +56,9 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView description = new TextView(this);
-        description.setText("This setup is built into this cloned app. Allow display-over-other-apps access to enable its floating controls. Fuku does not need to stay open after installation. The game itself will still launch in its normal Android activity for this first test.");
+        description.setText(Build.VERSION.SDK_INT >= 31
+                ? "This cloned app uses Android's native Picture-in-Picture mode. Continue, then swipe Home while playing to enter the floating game window. Overlay access is optional for the extra Fuku PiP control."
+                : "This cloned app uses Android's native Picture-in-Picture mode. Allow display-over-other-apps access for the floating Fuku control, then tap it while playing to enter the floating game window.");
         description.setTextColor(0xFFCDD3DF);
         description.setTextSize(15);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
@@ -63,7 +66,9 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(description, descriptionParams);
 
         permissionButton = new Button(this);
-        permissionButton.setText("Grant overlay permission");
+        permissionButton.setText(Build.VERSION.SDK_INT >= 31
+                ? "Optional: enable floating Fuku control"
+                : "Grant overlay permission");
         LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(-1, -2);
         permissionParams.topMargin = dp(26);
         root.addView(permissionButton, permissionParams);
@@ -105,12 +110,16 @@ public final class RuntimeEntryActivity extends Activity {
     private void updatePermissionState() {
         if (permissionButton == null || launchButton == null) return;
         boolean allowed = Settings.canDrawOverlays(this);
-        permissionButton.setText(allowed ? "Overlay permission granted" : "Grant overlay permission");
-        launchButton.setEnabled(allowed);
+        permissionButton.setText(allowed ? "Overlay permission granted"
+                : (Build.VERSION.SDK_INT >= 31
+                    ? "Optional: enable floating Fuku control"
+                    : "Grant overlay permission"));
+        launchButton.setEnabled(Build.VERSION.SDK_INT >= 31 || allowed);
     }
 
     private void launchOriginalApp() {
-        if (!Settings.canDrawOverlays(this)) {
+        boolean overlayAllowed = Settings.canDrawOverlays(this);
+        if (Build.VERSION.SDK_INT < 31 && !overlayAllowed) {
             Toast.makeText(this, "Allow overlay permission first.", Toast.LENGTH_LONG).show();
             return;
         }
@@ -121,9 +130,11 @@ public final class RuntimeEntryActivity extends Activity {
             if (launcherClass == null || launcherClass.isEmpty()) {
                 throw new IllegalStateException("Original game launcher was not recorded in the clone.");
             }
-            Intent service = new Intent(this, RuntimeOverlayService.class);
-            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
-            else startService(service);
+            if (overlayAllowed) {
+                Intent service = new Intent(this, RuntimeOverlayService.class);
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+                else startService(service);
+            }
 
             getPreferences(MODE_PRIVATE).edit().putBoolean("complete", true).apply();
             Intent game = new Intent().setComponent(new ComponentName(getPackageName(), launcherClass));
