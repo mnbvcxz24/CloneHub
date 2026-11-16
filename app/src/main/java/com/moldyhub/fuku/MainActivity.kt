@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
+import android.os.Build
+import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -90,7 +93,7 @@ class MainActivity : ComponentActivity() {
                         onRefresh = {
                             refreshApps()
                             refreshWorkspaces()
-                                        },
+                        },
                         onPrepare = ::prepareApks,
                         onAnalyze = ::analyzeWorkspace,
                         onClone = ::cloneWorkspace,
@@ -106,7 +109,6 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         refreshApps()
         refreshWorkspaces()
-        refreshClones()
     }
 
     private fun cloneApp(app: InstalledApp, mode: CloneOutputMode, onComplete: (String) -> Unit) {
@@ -221,7 +223,7 @@ class MainActivity : ComponentActivity() {
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
             }
-            runOnUiThread { refreshWorkspaces(); refreshClones(); onComplete(result) }
+            runOnUiThread { refreshWorkspaces(); onComplete(result) }
         }.start()
     }
 
