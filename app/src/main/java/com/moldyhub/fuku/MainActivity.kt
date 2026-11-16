@@ -251,7 +251,7 @@ class MainActivity : ComponentActivity() {
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
             }
-            runOnUiThread { onComplete(result) }
+            runOnUiThread { refreshWorkspaces(); refreshClones(); onComplete(result) }
         }.start()
     }
 
@@ -453,7 +453,7 @@ private fun FukuHome(
                 }
             )
         }
-        if (BuildConfig.FLAVOR != "lite") Row(
+        Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -468,7 +468,7 @@ private fun FukuHome(
             }
             Button(onClick = onRefresh) { Text("Refresh") }
         }
-        if (BuildConfig.FLAVOR != "lite" && workspaces.isNotEmpty()) {
+        if (workspaces.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(0.42f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -502,10 +502,12 @@ private fun FukuHome(
             }
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { outputMode = CloneOutputMode.INSTALL }, enabled = outputMode != CloneOutputMode.INSTALL) { Text("Install clone") }
-            Button(onClick = { outputMode = CloneOutputMode.EXTRACT }, enabled = outputMode != CloneOutputMode.EXTRACT) { Text("Extract APK") }
-            Button(onClick = { importApkLauncher.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }) { Text("Import APK") }
+            Button(modifier = Modifier.weight(1f), onClick = { outputMode = CloneOutputMode.INSTALL }, enabled = outputMode != CloneOutputMode.INSTALL) { Text("Install clone") }
+            Button(modifier = Modifier.weight(1f), onClick = { outputMode = CloneOutputMode.EXTRACT }, enabled = outputMode != CloneOutputMode.EXTRACT) { Text("Extract APK") }
         }
+        Button(modifier = Modifier.fillMaxWidth(), onClick = {
+            importApkLauncher.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream"))
+        }) { Text("Import APK from storage") }
         Text("Installed apps", fontWeight = FontWeight.SemiBold)
         Text(
             "${apps.size} launchable apps",
@@ -659,7 +661,7 @@ private fun FukuHome(
         )
     }
 
-    if (BuildConfig.FLAVOR != "lite") selectedWorkspace?.let { workspace ->
+    selectedWorkspace?.let { workspace ->
         AlertDialog(
             onDismissRequest = { if (analyzingPackage != workspace.packageName && cloningPackage != workspace.packageName) selectedWorkspace = null },
             title = { Text(workspace.appLabel) },
