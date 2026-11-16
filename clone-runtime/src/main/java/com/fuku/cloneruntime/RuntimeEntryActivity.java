@@ -85,7 +85,9 @@ public final class RuntimeEntryActivity extends Activity {
         launchButton.setOnClickListener(v -> launchOriginalApp());
 
         TextView note = new TextView(this);
-        note.setText("Floating gameplay rendering is not enabled yet. This stage tests the independent setup and overlay runtime.");
+        note.setText(Build.VERSION.SDK_INT >= 31
+                ? "Tip: swipe Home during gameplay to let Android place the game in PiP."
+                : "Tip: tap the floating Fuku control during gameplay to enter PiP.");
         note.setTextColor(0xFFFFD18A);
         note.setTextSize(12);
         LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
