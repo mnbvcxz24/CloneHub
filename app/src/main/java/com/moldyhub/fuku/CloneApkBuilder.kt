@@ -124,7 +124,7 @@ class CloneApkBuilder(private val context: Context) {
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)
         require(mutation.mutatedPackage == clonePackage) { "Manifest package mutation did not complete." }
-        injectCloneRuntime(stagedApks.first(), originalLauncherClass)
+        injectCloneRuntime(stagedApks.first(), originalLauncherClass, clonePackage)
 
         val authorities = mutation.authorityMap.toMutableMap()
         val permissions = mutation.permissionMap.toMutableMap()
@@ -254,7 +254,7 @@ class CloneApkBuilder(private val context: Context) {
         }
     }
 
-    private fun injectCloneRuntime(apkFile: File, originalLauncherClass: String) {
+    private fun injectCloneRuntime(apkFile: File, originalLauncherClass: String, clonePackage: String) {
         val module = ApkModule.loadApkFile(apkFile)
         module.setLoadDefaultFramework(false)
         val manifest = module.androidManifest ?: error("Mutated clone manifest is missing.")
