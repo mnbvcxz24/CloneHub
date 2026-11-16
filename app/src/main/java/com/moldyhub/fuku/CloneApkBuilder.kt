@@ -39,7 +39,6 @@ class CloneApkBuilder(private val context: Context) {
         private const val KEYSTORE_PASSWORD = "fuku-local-signing-key"
         private const val MAX_CLONE_INDEX = 999
         private const val RUNTIME_SETUP_ACTIVITY = "com.fuku.cloneruntime.RuntimeEntryActivity"
-        private const val RUNTIME_OVERLAY_SERVICE = "com.fuku.cloneruntime.RuntimeOverlayService"
         private const val RUNTIME_PIP_PROVIDER = "com.fuku.cloneruntime.PipRuntimeInitializer"
         private const val RUNTIME_LAUNCHER_METADATA = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER"
     }
@@ -272,9 +271,6 @@ class CloneApkBuilder(private val context: Context) {
             }
         }
 
-        manifest.addUsesPermission("android.permission.SYSTEM_ALERT_WINDOW")
-        manifest.addUsesPermission("android.permission.FOREGROUND_SERVICE")
-        manifest.addUsesPermission("android.permission.FOREGROUND_SERVICE_SPECIAL_USE")
 
         val application = manifest.getOrCreateApplicationElement()
         val setupActivity = manifest.getOrCreateActivity(RUNTIME_SETUP_ACTIVITY, false)
@@ -295,17 +291,6 @@ class CloneApkBuilder(private val context: Context) {
             .setValueAsString("$clonePackage.fuku.pip.runtime")
         pipProvider.getOrCreateAndroidAttribute("exported", 0x01010010)
             .setValueAsBoolean(false)
-
-        val service = application.newElement("service")
-        service.getOrCreateAndroidAttribute("name", 0x01010003).setValueAsString(RUNTIME_OVERLAY_SERVICE)
-        service.getOrCreateAndroidAttribute("exported", 0x01010010).setValueAsBoolean(false)
-        service.getOrCreateAndroidAttribute("foregroundServiceType", 0x010105A9)
-            .setValueAsString("specialUse")
-        val subtype = service.newElement("property")
-        subtype.getOrCreateAndroidAttribute("name", 0x01010003)
-            .setValueAsString("android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE")
-        subtype.getOrCreateAndroidAttribute("value", 0x01010024)
-            .setValueAsString("Displays floating controls for this cloned app")
 
         val launcherMetadata = application.newElement("meta-data")
         launcherMetadata.getOrCreateAndroidAttribute("name", 0x01010003)
