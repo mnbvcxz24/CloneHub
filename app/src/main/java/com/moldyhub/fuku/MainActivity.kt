@@ -5,10 +5,7 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings
-import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -76,13 +73,11 @@ private data class PreparedWorkspace(
 class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
-    private var installedClones by mutableStateOf<List<InstalledClone>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshApps()
         refreshWorkspaces()
-        refreshClones()
         setContent {
             MaterialTheme {
                 Surface(
@@ -92,14 +87,10 @@ class MainActivity : ComponentActivity() {
                     FukuHome(
                         apps = installedApps,
                         workspaces = preparedWorkspaces,
-                        clones = installedClones,
-                        onOpenCloneInWindow = ::openCloneInWindow,
-                        onOpenAllClonesInWindows = ::openAllClonesInWindows,
                         onRefresh = {
                             refreshApps()
                             refreshWorkspaces()
-                            refreshClones()
-                        },
+                                        },
                         onPrepare = ::prepareApks,
                         onAnalyze = ::analyzeWorkspace,
                         onClone = ::cloneWorkspace,
@@ -116,27 +107,6 @@ class MainActivity : ComponentActivity() {
         refreshApps()
         refreshWorkspaces()
         refreshClones()
-    }
-
-    private fun refreshClones() {
-        installedClones = WindowLauncher.findClones(packageManager)
-    }
-
-    /** Fuku's own overlay windows need "Display over other apps"; send the user to grant it. */
-    private fun ensureOverlayPermission(): Boolean {
-        if (FloatingWindowService.canDrawOverlays(this)) return true
-        Toast.makeText(this, "Allow \"Display over other apps\" for Fuku, then tap again.", Toast.LENGTH_LONG).show()
-        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-        return false
-    }
-
-    private fun openCloneInWindow(clone: InstalledClone, slot: Int) {
-        if (ensureOverlayPermission()) FloatingWindowService.open(this, clone.packageName, slot)
-    }
-
-    private fun openAllClonesInWindows() {
-        if (!ensureOverlayPermission()) return
-        installedClones.forEachIndexed { index, clone -> FloatingWindowService.open(this, clone.packageName, index) }
     }
 
     private fun cloneApp(app: InstalledApp, mode: CloneOutputMode, onComplete: (String) -> Unit) {
@@ -398,9 +368,6 @@ class MainActivity : ComponentActivity() {
 private fun FukuHome(
     apps: List<InstalledApp>,
     workspaces: List<PreparedWorkspace>,
-    clones: List<InstalledClone>,
-    onOpenCloneInWindow: (InstalledClone, Int) -> Unit,
-    onOpenAllClonesInWindows: () -> Unit,
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
@@ -550,51 +517,6 @@ private fun FukuHome(
                                 Text(app.packageName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("${app.apkPaths.size} APK file(s)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        }
-                    }
-                }
-            }
-        }
-        if (clones.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Your clones", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "${clones.size} installed • opens in floating windows",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (clones.size > 1) Button(onClick = onOpenAllClonesInWindows) { Text("Open all") }
-            }
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                itemsIndexed(clones, key = { _, clone -> clone.packageName }) { index, clone ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val cloneIcon = remember(clone.packageName) {
-                                clone.icon.toBitmap(width = 96, height = 96).asImageBitmap()
-                            }
-                            Image(
-                                bitmap = cloneIcon,
-                                contentDescription = "${clone.label} icon",
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(clone.label, fontWeight = FontWeight.Medium)
-                                Text(clone.packageName, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            TextButton(onClick = { onOpenCloneInWindow(clone, index) }) { Text("Open in window") }
                         }
                     }
                 }
