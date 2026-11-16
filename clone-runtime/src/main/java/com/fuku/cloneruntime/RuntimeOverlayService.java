@@ -17,6 +17,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public final class RuntimeOverlayService extends Service {
     private static final String CHANNEL = "fuku_clone_controls";
@@ -77,7 +78,7 @@ public final class RuntimeOverlayService extends Service {
     private void showControl() {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         TextView pill = new TextView(this);
-        pill.setText("Fuku • ×");
+        pill.setText("Fuku • PiP");
         pill.setTextColor(0xFFFFFFFF);
         pill.setTextSize(13);
         pill.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -126,7 +127,15 @@ public final class RuntimeOverlayService extends Service {
                         catch (Exception ignored) { }
                         return true;
                     case MotionEvent.ACTION_UP:
-                        if (!moved) stopSelf();
+                        if (!moved) {
+                            if (PipRuntimeController.enterCurrentActivity()) {
+                                stopSelf();
+                            } else {
+                                Toast.makeText(RuntimeOverlayService.this,
+                                        "PiP is not available for the current screen yet.",
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                        }
                         return true;
                     default:
                         return true;
