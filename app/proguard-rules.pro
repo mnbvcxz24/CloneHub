@@ -25,6 +25,3 @@
 # Keep Hilt generated classes
 -keep class dagger.hilt.** { *; }
 -keep class * extends dagger.hilt.android.internal.managers.** { *; }
-
-# Started as root through app_process by RootInputBridge; must keep its name and main().
--keep class com.moldyhub.fuku.rootinput.InputServer { public static void main(java.lang.String[]); }
