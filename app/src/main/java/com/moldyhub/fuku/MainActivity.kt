@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,6 +53,8 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.Properties
+
+enum class CloneOutputMode { INSTALL, EXTRACT }
 
 private data class InstalledApp(
     val label: String,
@@ -100,6 +104,7 @@ class MainActivity : ComponentActivity() {
                         onAnalyze = ::analyzeWorkspace,
                         onClone = ::cloneWorkspace,
                         onCloneApp = ::cloneApp,
+                        onImportApk = ::importApk,
                     )
                 }
             }
@@ -134,7 +139,7 @@ class MainActivity : ComponentActivity() {
         installedClones.forEachIndexed { index, clone -> FloatingWindowService.open(this, clone.packageName, index) }
     }
 
-    private fun cloneApp(app: InstalledApp, onComplete: (String) -> Unit) {
+    private fun cloneApp(app: InstalledApp, mode: CloneOutputMode, onComplete: (String) -> Unit) {
         prepareApks(app) { prepared ->
             if (!prepared.startsWith("Prepared and verified")) {
                 onComplete(prepared)
@@ -145,7 +150,7 @@ class MainActivity : ComponentActivity() {
                 onComplete("APK preparation finished, but the verified workspace could not be found.")
                 return@prepareApks
             }
-            cloneWorkspace(workspace) { result -> onComplete(prepared + "\n\n" + result) }
+            cloneWorkspace(workspace, mode) { result -> onComplete(prepared + "\n\n" + result) }
         }
     }
 
@@ -228,15 +233,63 @@ class MainActivity : ComponentActivity() {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun cloneWorkspace(workspace: PreparedWorkspace, onComplete: (String) -> Unit) {
+    private fun cloneWorkspace(workspace: PreparedWorkspace, mode: CloneOutputMode, onComplete: (String) -> Unit) {
+        if (mode == CloneOutputMode.INSTALL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            Toast.makeText(this, "Allow Fuku to install APKs, then tap clone again.", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            onComplete("Install permission is required. Enable Allow from this source in Settings, return to Fuku, and retry.")
+            return
+        }
         Thread {
             val result = runCatching {
-                val outcome = CloneApkBuilder(this).buildAndExport(workspace.directory, workspace.packageName, workspace.appLabel)
-                "Saved successfully: ${outcome.fileName}\nLocation: ${outcome.savedLocation}"
+                val outcome = CloneApkBuilder(this).build(workspace.directory, workspace.packageName, workspace.appLabel, mode)
+                File(workspace.directory).deleteRecursively()
+                if (mode == CloneOutputMode.INSTALL) "Install request sent for ${outcome.packageName}. Confirm in Android's installer if prompted."
+                else "Saved successfully: ${outcome.fileName}\nLocation: ${outcome.savedLocation}"
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
             }
             runOnUiThread { onComplete(result) }
+        }.start()
+    }
+
+    private fun importApk(uri: Uri, onComplete: (String) -> Unit) {
+        Thread {
+            val result = runCatching {
+                val temp = File(cacheDir, "imported_source.apk")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(temp).use { output -> input.copyTo(output, 64 * 1024); output.fd.sync() }
+                } ?: error("Could not read the selected APK.")
+                val info = packageManager.getPackageArchiveInfo(temp.absolutePath, PackageManager.GET_ACTIVITIES)
+                    ?: error("The selected file is not a readable APK.")
+                val sourcePackage = info.packageName ?: error("APK package ID is missing.")
+                val appInfo = info.applicationInfo ?: error("APK application info is missing.")
+                appInfo.sourceDir = temp.absolutePath
+                appInfo.publicSourceDir = temp.absolutePath
+                val label = packageManager.getApplicationLabel(appInfo).toString().ifBlank { sourcePackage }
+                val safePackage = sourcePackage.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val workspace = File(filesDir, "prepared_apks/import_${safePackage}").apply {
+                    if (exists()) deleteRecursively()
+                    mkdirs()
+                }
+                val base = File(workspace, "base.apk")
+                temp.copyTo(base, overwrite = true)
+                val metadata = Properties().apply {
+                    setProperty("packageName", sourcePackage)
+                    setProperty("appLabel", label)
+                    setProperty("createdAtEpochMs", System.currentTimeMillis().toString())
+                    setProperty("apkCount", "1")
+                    setProperty("apk.0.name", "base.apk")
+                    setProperty("apk.0.bytes", base.length().toString())
+                    setProperty("apk.0.sha256", sha256(base))
+                }
+                FileOutputStream(File(workspace, "workspace.properties")).use { metadata.store(it, "Fuku imported APK workspace") }
+                temp.delete()
+                "Imported and verified $label ($sourcePackage). Open its Prepared workspace card to clone it."
+            }.getOrElse { "APK import failed: ${it.message ?: it.javaClass.simpleName}" }
+            runOnUiThread { refreshWorkspaces(); onComplete(result) }
         }.start()
     }
 
@@ -351,8 +404,9 @@ private fun FukuHome(
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
-    onClone: (PreparedWorkspace, (String) -> Unit) -> Unit,
-    onCloneApp: (InstalledApp, (String) -> Unit) -> Unit,
+    onClone: (PreparedWorkspace, CloneOutputMode, (String) -> Unit) -> Unit,
+    onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
+    onImportApk: (Uri, (String) -> Unit) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -363,6 +417,11 @@ private fun FukuHome(
     var analyzingPackage by remember { mutableStateOf<String?>(null) }
     var cloningPackage by remember { mutableStateOf<String?>(null) }
     var cloneResult by remember { mutableStateOf<String?>(null) }
+    var outputMode by remember { mutableStateOf(CloneOutputMode.EXTRACT) }
+    var importResult by remember { mutableStateOf<String?>(null) }
+    val importApkLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImportApk(uri) { importResult = it }
+    }
     val filteredApps = remember(apps, search) {
         apps.filter {
             it.label.contains(search, ignoreCase = true) ||
@@ -414,7 +473,7 @@ private fun FukuHome(
                 modifier = Modifier.fillMaxWidth().weight(0.42f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(workspaces, key = { it.packageName }) { workspace ->
+                items(workspaces, key = { it.directory }) { workspace ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { selectedWorkspace = workspace }
@@ -441,6 +500,11 @@ private fun FukuHome(
                     }
                 }
             }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { outputMode = CloneOutputMode.INSTALL }, enabled = outputMode != CloneOutputMode.INSTALL) { Text("Install clone") }
+            Button(onClick = { outputMode = CloneOutputMode.EXTRACT }, enabled = outputMode != CloneOutputMode.EXTRACT) { Text("Extract APK") }
+            Button(onClick = { importApkLauncher.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }) { Text("Import APK") }
         }
         Text("Installed apps", fontWeight = FontWeight.SemiBold)
         Text(
@@ -541,6 +605,10 @@ private fun FukuHome(
         )
     }
 
+    importResult?.let { result ->
+        AlertDialog(onDismissRequest = { importResult = null }, title = { Text("Import APK") }, text = { Text(result) }, confirmButton = { TextButton(onClick = { importResult = null }) { Text("OK") } })
+    }
+
     selectedApp?.let { app ->
         AlertDialog(
             onDismissRequest = { if (preparingPackage != app.packageName) selectedApp = null },
@@ -562,7 +630,7 @@ private fun FukuHome(
                         preparingPackage = app.packageName
                         preparationResult = if (BuildConfig.FLAVOR == "lite") "Preparing, verifying, and building your Fuku clone..." else "Copying APK files and verifying checksums..."
                         if (BuildConfig.FLAVOR == "lite") {
-                            onCloneApp(app) { result ->
+                            onCloneApp(app, outputMode) { result ->
                                 preparationResult = result
                                 preparingPackage = null
                             }
@@ -613,13 +681,14 @@ private fun FukuHome(
                         onClick = {
                             cloningPackage = workspace.packageName
                             cloneResult = "Rewriting package metadata, signing, and saving the output..."
-                            onClone(workspace) { result ->
+                            onClone(workspace, outputMode) { result ->
                                 cloneResult = result
                                 cloningPackage = null
+                                if (result.startsWith("Saved successfully") || result.startsWith("Install request sent")) selectedWorkspace = null
                             }
                         }
                     ) {
-                        Text(if (cloningPackage == workspace.packageName) "Exporting..." else "Create & save APK")
+                        Text(if (cloningPackage == workspace.packageName) "Working..." else if (outputMode == CloneOutputMode.INSTALL) "Create & install clone" else "Create & extract APK")
                     }
                     TextButton(
                         enabled = workspace.filesValid && analyzingPackage == null && cloningPackage == null,

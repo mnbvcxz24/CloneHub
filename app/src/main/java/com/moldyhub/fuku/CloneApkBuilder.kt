@@ -1,6 +1,9 @@
 package com.moldyhub.fuku
 
 import android.content.Context
+import android.content.Intent
+import android.app.PendingIntent
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import com.android.apksig.ApkSigner
 import com.reandroid.apk.ApkModule
@@ -29,6 +32,8 @@ import java.util.zip.ZipOutputStream
 
 data class CloneBuildOutcome(val packageName: String, val fileName: String, val savedLocation: String)
 
+private val cloneIndexLock = Any()
+
 class CloneApkBuilder(private val context: Context) {
     companion object {
         private const val KEYSTORE_PASSWORD = "fuku-local-signing-key"
@@ -38,7 +43,7 @@ class CloneApkBuilder(private val context: Context) {
         private const val RUNTIME_LAUNCHER_METADATA = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER"
     }
 
-    fun buildAndExport(workspacePath: String, originalPackage: String, appLabel: String): CloneBuildOutcome {
+    fun build(workspacePath: String, originalPackage: String, appLabel: String, mode: CloneOutputMode): CloneBuildOutcome {
         require(originalPackage.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
             "This package name cannot be safely converted to a clone ID."
         }
@@ -65,15 +70,33 @@ class CloneApkBuilder(private val context: Context) {
             ?: error("Android cannot read the prepared base APK.")
         require(baseInfo.packageName == originalPackage) { "The prepared base APK package ID does not match the workspace." }
 
-        val cloneIndex = (1..MAX_CLONE_INDEX).firstOrNull { index ->
-            val candidate = "$originalPackage.fuku.c${index.toString().padStart(3, '0')}"
-            try {
-                context.packageManager.getPackageInfo(candidate, 0)
-                false
-            } catch (_: PackageManager.NameNotFoundException) {
-                true
+        val cloneIndex = synchronized(cloneIndexLock) {
+            val sequenceFile = File(context.filesDir, "clone-indexes.properties")
+            val sequences = Properties()
+            if (sequenceFile.isFile) FileInputStream(sequenceFile).use { sequences.load(it) }
+            var next = (sequences.getProperty(originalPackage)?.toIntOrNull() ?: 0) + 1
+            while (next <= MAX_CLONE_INDEX) {
+                val candidatePackage = "$originalPackage.fuku.c${next.toString().padStart(3, '0')}"
+                val installed = try {
+                    context.packageManager.getPackageInfo(candidatePackage, 0)
+                    true
+                } catch (_: PackageManager.NameNotFoundException) {
+                    false
+                }
+                if (!installed) break
+                next++
             }
-        } ?: error("Clone limit reached for this source app.")
+            require(next <= MAX_CLONE_INDEX) { "Clone limit reached for this source app." }
+            sequences.setProperty(originalPackage, next.toString())
+            val temporary = File(sequenceFile.parentFile, sequenceFile.name + ".tmp")
+            FileOutputStream(temporary).use { sequences.store(it, "Fuku generated clone indexes") }
+            if (sequenceFile.exists() && !sequenceFile.delete()) error("Could not update clone sequence.")
+            if (!temporary.renameTo(sequenceFile)) {
+                temporary.copyTo(sequenceFile, overwrite = true)
+                temporary.delete()
+            }
+            next
+        }
         val clonePackage = "$originalPackage.fuku.c${cloneIndex.toString().padStart(3, '0')}"
         val suffix = "fuku_c${cloneIndex.toString().padStart(3, '0')}"
 
@@ -131,12 +154,46 @@ class CloneApkBuilder(private val context: Context) {
         require(signedApks.all { it.isFile && it.length() > 0L }) { "One or more signed APKs are empty." }
 
         val singleApk = signedApks.size == 1
-        val extension = if (singleApk) ".apk" else ".zip"
         val safeLabel = appLabel.replace(Regex("[^A-Za-z0-9._-]"), "_").take(48).ifBlank { "App" }
-        val fileName = "${safeLabel}_Fuku_${cloneIndex.toString().padStart(3, '0')}$extension"
-        val savedLocation = saveExport(fileName, singleApk, signedApks)
+        val number = cloneIndex.toString().padStart(3, '0')
+        val extension = if (singleApk) ".apk" else ".zip"
+        val fileName = "${safeLabel}_Fuku_$number$extension"
+        val savedLocation = if (mode == CloneOutputMode.INSTALL) {
+            installApks(clonePackage, signedApks)
+            "Android package installer"
+        } else {
+            saveExport(fileName, singleApk, signedApks)
+        }
         outputDir.deleteRecursively()
-        return CloneBuildOutcome(clonePackage, fileName, savedLocation)
+        staging.deleteRecursively()
+        return CloneBuildOutcome(clonePackage, if (mode == CloneOutputMode.INSTALL) "$safeLabel Fuku $number" else fileName, savedLocation)
+    }
+
+    private fun installApks(clonePackage: String, signedApks: List<File>) {
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setAppPackageName(clonePackage)
+        }
+        val sessionId = installer.createSession(params)
+        try {
+            installer.openSession(sessionId).use { session ->
+                signedApks.forEach { apk ->
+                    session.openWrite(apk.name, 0, apk.length()).use { output ->
+                        apk.inputStream().use { input -> input.copyTo(output, 64 * 1024) }
+                        session.fsync(output)
+                    }
+                }
+                val callback = Intent(context, CloneInstallReceiver::class.java).putExtra("packageName", clonePackage)
+                val pending = PendingIntent.getBroadcast(
+                    context, sessionId, callback,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                )
+                session.commit(pending.intentSender)
+            }
+        } catch (error: Throwable) {
+            runCatching { installer.abandonSession(sessionId) }
+            throw error
+        }
     }
 
     private fun saveExport(fileName: String, singleApk: Boolean, signedApks: List<File>): String {
