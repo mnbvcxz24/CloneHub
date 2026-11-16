@@ -1,7 +1,9 @@
 package com.moldyhub.fuku
 
 import android.app.ActivityManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -51,6 +53,8 @@ class FloatingCloneWindow(
         const val MIN_CONTENT_WIDTH_DP = 240
         const val KEEP_ON_SCREEN_DP = 80
         val SAFE_PACKAGE = Regex("[A-Za-z0-9._]+")
+        val SAFE_COMPONENT = Regex("[A-Za-z0-9._\\$]+/[A-Za-z0-9._\\$]+")
+        const val META_ORIGINAL_LAUNCHER = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER"
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -381,12 +385,26 @@ class FloatingCloneWindow(
         }
     }
 
+    private fun launchIntentFor(pkg: String): Intent? {
+        val appInfo = runCatching {
+            context.packageManager.getApplicationInfo(pkg, PackageManager.GET_META_DATA)
+        }.getOrNull()
+        val originalLauncher = appInfo?.metaData?.getString(META_ORIGINAL_LAUNCHER)
+        if (!originalLauncher.isNullOrBlank()) {
+            return Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                component = ComponentName(pkg, originalLauncher)
+            }
+        }
+        return context.packageManager.getLaunchIntentForPackage(pkg)
+    }
+
     private fun launchClone() {
         val pkg = clone.packageName
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
+        val launchIntent = launchIntentFor(pkg)
         val component = launchIntent?.component?.flattenToString()
-        if (launchIntent == null || component == null) {
-            fail("$pkg has no launchable screen.")
+        if (launchIntent == null || component == null || !SAFE_COMPONENT.matches(component)) {
+            fail("$pkg has no safe, launchable screen.")
             return
         }
 
