@@ -40,6 +40,7 @@ class CloneApkBuilder(private val context: Context) {
         private const val MAX_CLONE_INDEX = 999
         private const val RUNTIME_SETUP_ACTIVITY = "com.fuku.cloneruntime.RuntimeEntryActivity"
         private const val RUNTIME_OVERLAY_SERVICE = "com.fuku.cloneruntime.RuntimeOverlayService"
+        private const val RUNTIME_PIP_PROVIDER = "com.fuku.cloneruntime.PipRuntimeInitializer"
         private const val RUNTIME_LAUNCHER_METADATA = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER"
     }
 
@@ -286,6 +287,14 @@ class CloneApkBuilder(private val context: Context) {
             .setValueAsString("android.intent.action.MAIN")
         launcherFilter.newElement("category").getOrCreateAndroidAttribute("name", 0x01010003)
             .setValueAsString("android.intent.category.LAUNCHER")
+
+        val pipProvider = application.newElement("provider")
+        pipProvider.getOrCreateAndroidAttribute("name", 0x01010003)
+            .setValueAsString(RUNTIME_PIP_PROVIDER)
+        pipProvider.getOrCreateAndroidAttribute("authorities", 0x01010018)
+            .setValueAsString("$clonePackage.fuku.pip.runtime")
+        pipProvider.getOrCreateAndroidAttribute("exported", 0x01010010)
+            .setValueAsBoolean(false)
 
         val service = application.newElement("service")
         service.getOrCreateAndroidAttribute("name", 0x01010003).setValueAsString(RUNTIME_OVERLAY_SERVICE)
