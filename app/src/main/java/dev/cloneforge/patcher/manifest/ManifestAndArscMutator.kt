@@ -419,26 +419,26 @@ class ManifestAndArscMutator {
      */
     private fun patchFloatingWindowLauncher(appElement: ResXmlElement) {
         // Android 10+ multi-resume hint. This does not force freeform support.
-        val multiResume = appElement.addElement(TAG_META_DATA)
+        val multiResume = appElement.newElement(TAG_META_DATA)
         multiResume.getOrCreateAndroidAttribute("name", ATTR_NAME)
             .setValueAsString("android.allow_multiple_resumed_activities")
         multiResume.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
             .setValueAsBoolean(true)
 
         // OEM hints are advisory only; Android may ignore them.
-        val samsungMultiWindow = appElement.addElement(TAG_META_DATA)
+        val samsungMultiWindow = appElement.newElement(TAG_META_DATA)
         samsungMultiWindow.getOrCreateAndroidAttribute("name", ATTR_NAME)
             .setValueAsString("com.samsung.android.sdk.multiwindow.enable")
         samsungMultiWindow.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
             .setValueAsBoolean(true)
 
-        val samsungSupport = appElement.addElement(TAG_META_DATA)
+        val samsungSupport = appElement.newElement(TAG_META_DATA)
         samsungSupport.getOrCreateAndroidAttribute("name", ATTR_NAME)
             .setValueAsString("com.sec.android.support.multiwindow")
         samsungSupport.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
             .setValueAsBoolean(true)
 
-        val lgSupport = appElement.addElement(TAG_META_DATA)
+        val lgSupport = appElement.newElement(TAG_META_DATA)
         lgSupport.getOrCreateAndroidAttribute("name", ATTR_NAME)
             .setValueAsString("com.lge.support.SPLIT_WINDOW")
         lgSupport.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
@@ -454,7 +454,7 @@ class ManifestAndArscMutator {
             val originalTheme = theme?.valueAsString ?: "__none__"
 
             // Preserve the source theme value before replacing it.
-            val savedTheme = component.addElement(TAG_META_DATA)
+            val savedTheme = component.newElement(TAG_META_DATA)
             savedTheme.getOrCreateAndroidAttribute("name", ATTR_NAME)
                 .setValueAsString("com.fuku.originalTheme")
             savedTheme.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
@@ -483,7 +483,7 @@ class ManifestAndArscMutator {
                     }
                 }
                 if (hasMain && hasLauncher && !hasMultiWindow) {
-                    filter.addElement("category")
+                    filter.newElement("category")
                         .getOrCreateAndroidAttribute("name", ATTR_NAME)
                         .setValueAsString("android.intent.category.MULTIWINDOW_LAUNCHER")
                 }
