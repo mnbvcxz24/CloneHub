@@ -1,5 +1,3 @@
-import java.util.zip.ZipFile
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -12,8 +10,8 @@ android {
         applicationId = "com.moldyhub.fuku"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.4.0-alpha01"
+        versionCode = 4
+        versionName = "0.4.1-alpha01"
     }
     flavorDimensions += "edition"
     productFlavors {
@@ -57,25 +55,3 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 }
-
-val cloneRuntimeDex = layout.buildDirectory.file("generated/cloneRuntimeAssets/clone-runtime.dex")
-val runtimeApk = project(":clone-runtime").layout.buildDirectory.file("outputs/apk/debug/clone-runtime-debug.apk")
-val extractCloneRuntimeDex by tasks.registering {
-    dependsOn(":clone-runtime:assembleDebug")
-    inputs.file(runtimeApk)
-    outputs.file(cloneRuntimeDex)
-    doLast {
-        val apk = runtimeApk.get().asFile
-        check(apk.isFile) { "Clone runtime APK missing: " + apk.absolutePath }
-        val output = cloneRuntimeDex.get().asFile
-        output.parentFile.mkdirs()
-        ZipFile(apk).use { archive ->
-            val dex = archive.getEntry("classes.dex") ?: error("Clone runtime APK has no classes.dex.")
-            archive.getInputStream(dex).use { input ->
-                output.outputStream().use { target -> input.copyTo(target) }
-            }
-        }
-    }
-}
-android.sourceSets.getByName("main").assets.srcDir(cloneRuntimeDex.map { it.asFile.parentFile })
-tasks.named("preBuild").configure { dependsOn(extractCloneRuntimeDex) }
