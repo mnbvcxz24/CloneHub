@@ -8,7 +8,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.util.Rational;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -33,14 +32,55 @@ public final class PipRuntimeController {
 
     private PipRuntimeController() { }
 
+    /**
+     * Apply the floating layout as soon as the source activity has completed
+     * onCreate(), before its first normal resumed frame whenever possible.
+     */
+    public static void onActivityCreated(Activity activity) {
+        if (!isEligibleActivity(activity)) return;
+        currentActivity = new WeakReference<>(activity);
+        applyFloatingWindow(activity);
+        installFloatingControls(activity);
+    }
+
     public static void onActivityResumed(Activity activity) {
-        if (activity == null || activity.isFinishing() || activity.isDestroyed()
-                || activity.getClass().getName().equals("com.fuku.cloneruntime.RuntimeEntryActivity")) {
-            return;
-        }
+        if (!isEligibleActivity(activity)) return;
         currentActivity = new WeakReference<>(activity);
         applyPictureInPictureParams(activity);
+        applyFloatingWindow(activity);
         installFloatingControls(activity);
+    }
+
+    private static boolean isEligibleActivity(Activity activity) {
+        return activity != null && !activity.isFinishing() && !activity.isDestroyed()
+                && !activity.getClass().getName().equals(
+                        "com.fuku.cloneruntime.RuntimeEntryActivity");
+    }
+
+    private static void applyFloatingWindow(Activity activity) {
+        if (!isEligibleActivity(activity)) return;
+        Window window = activity.getWindow();
+        if (window == null) return;
+
+        float density = activity.getResources().getDisplayMetrics().density;
+        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
+        int width = dp(activity, Math.min(480, Math.max(280,
+                (int) (screenWidth / density) - 32)));
+        int height = dp(activity, Math.max(240,
+                (int) (screenHeight / density) - 72));
+
+        // Apply to ordinary application activities too; most launcher
+        // activities do not declare windowIsFloating in their theme.
+        WindowManager.LayoutParams params = window.getAttributes();
+        params.width = Math.min(width, Math.max(1, screenWidth - dp(activity, 16)));
+        params.height = Math.min(height, Math.max(1, screenHeight - dp(activity, 48)));
+        params.gravity = Gravity.TOP | Gravity.START;
+        if (params.x == 0 && params.y == 0) {
+            params.x = dp(activity, 16);
+            params.y = dp(activity, 48);
+        }
+        window.setAttributes(params);
     }
 
     public static void onActivityDestroyed(Activity activity) {
@@ -67,27 +107,7 @@ public final class PipRuntimeController {
     }
 
     private static void installFloatingControls(Activity activity) {
-        TypedValue floating = new TypedValue();
-        if (!activity.getTheme().resolveAttribute(android.R.attr.windowIsFloating, floating, true)
-                || floating.data == 0) return;
-
         Window window = activity.getWindow();
-        WindowManager.LayoutParams params = window.getAttributes();
-        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
-        int width = dp(activity, Math.min(480, Math.max(280,
-                (int) (screenWidth / activity.getResources().getDisplayMetrics().density) - 32)));
-        int height = dp(activity, Math.max(240,
-                (int) (screenHeight / activity.getResources().getDisplayMetrics().density) - 72));
-        params.width = Math.min(width, screenWidth - dp(activity, 16));
-        params.height = Math.min(height, screenHeight - dp(activity, 48));
-        params.gravity = Gravity.TOP | Gravity.START;
-        if (params.x == 0 && params.y == 0) {
-            params.x = dp(activity, 16);
-            params.y = dp(activity, 48);
-        }
-        window.setAttributes(params);
-
         if (windowBars.containsKey(activity)) return;
         View decorView = window.getDecorView();
         if (!(decorView instanceof ViewGroup)) return;
