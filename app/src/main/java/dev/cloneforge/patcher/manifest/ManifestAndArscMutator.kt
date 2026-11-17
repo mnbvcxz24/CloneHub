@@ -53,6 +53,7 @@ class ManifestAndArscMutator {
         private const val ATTR_PROCESS = 0x01010011
         private const val ATTR_TASK_AFFINITY = 0x01010012
         private const val ATTR_LABEL = 0x01010001
+        private const val ATTR_THEME = 0x01010000
         private const val ATTR_AUTHORITIES = 0x01010018
         private const val ATTR_META_VALUE = 0x01010024
         private const val ATTR_TARGET_ACTIVITY = 0x01010202
@@ -243,8 +244,9 @@ class ManifestAndArscMutator {
 
         // No injected runtime metadata is added.
 
-        // 8. Patch the app label and launcher activity labels.
+        // 8. Patch labels and apply the first-stage floating-window experiment.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
+        patchFloatingWindowLauncher(appElement)
 
         // 9. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
         mutateResXmlFiles(apkModule, origPkg, cloneSuffix, authorityMap, accountTypeMap)
@@ -402,6 +404,88 @@ class ManifestAndArscMutator {
                 val compLabelAttr = comp.searchAttributeByResourceId(ATTR_LABEL)
                 if (compLabelAttr != null) {
                     compLabelAttr.setValueAsString(customLabel)
+                }
+            }
+        }
+    }
+
+    /**
+     * First-stage experiment based on the dialog-window findings.
+     *
+     * Only launcher activities/aliases receive Theme.Dialog. Their previous
+     * theme reference is preserved as clone metadata so a later runtime can
+     * restore it. This intentionally does not force every Activity into a
+     * dialog theme because games often use SurfaceView/OpenGL/Unity activities.
+     */
+    private fun patchFloatingWindowLauncher(appElement: ResXmlElement) {
+        // Android 10+ multi-resume hint. This does not force freeform support.
+        val multiResume = appElement.addElement(TAG_META_DATA)
+        multiResume.getOrCreateAndroidAttribute("name", ATTR_NAME)
+            .setValueAsString("android.allow_multiple_resumed_activities")
+        multiResume.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
+            .setValueAsBoolean(true)
+
+        // OEM hints are advisory only; Android may ignore them.
+        val samsungMultiWindow = appElement.addElement(TAG_META_DATA)
+        samsungMultiWindow.getOrCreateAndroidAttribute("name", ATTR_NAME)
+            .setValueAsString("com.samsung.android.sdk.multiwindow.enable")
+        samsungMultiWindow.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
+            .setValueAsBoolean(true)
+
+        val samsungSupport = appElement.addElement(TAG_META_DATA)
+        samsungSupport.getOrCreateAndroidAttribute("name", ATTR_NAME)
+            .setValueAsString("com.sec.android.support.multiwindow")
+        samsungSupport.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
+            .setValueAsBoolean(true)
+
+        val lgSupport = appElement.addElement(TAG_META_DATA)
+        lgSupport.getOrCreateAndroidAttribute("name", ATTR_NAME)
+            .setValueAsString("com.lge.support.SPLIT_WINDOW")
+        lgSupport.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
+            .setValueAsBoolean(true)
+
+        for (component in collectComponents(appElement)) {
+            if (!component.equalsName("activity") && !component.equalsName("activity-alias")) {
+                continue
+            }
+            if (!isLauncherComponent(component)) continue
+
+            val theme = component.searchAttributeByResourceId(ATTR_THEME)
+            val originalTheme = theme?.valueAsString ?: "__none__"
+
+            // Preserve the source theme value before replacing it.
+            val savedTheme = component.addElement(TAG_META_DATA)
+            savedTheme.getOrCreateAndroidAttribute("name", ATTR_NAME)
+                .setValueAsString("com.fuku.originalTheme")
+            savedTheme.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
+                .setValueAsString(originalTheme)
+
+            // @android:style/Theme.Dialog (framework resource 0x01030006).
+            component.getOrCreateAndroidAttribute("theme", ATTR_THEME).apply {
+                setValueType(ValueType.REFERENCE)
+                setData(0x01030006)
+            }
+
+            // Keep the launcher discoverable while advertising multi-window
+            // support to launchers/OEMs that recognize this category.
+            for (filter in CollectionUtil.toList(component.getElements("intent-filter"))) {
+                var hasMain = false
+                var hasLauncher = false
+                var hasMultiWindow = false
+                for (action in CollectionUtil.toList(filter.getElements("action"))) {
+                    if (action.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
+                        == "android.intent.action.MAIN") hasMain = true
+                }
+                for (category in CollectionUtil.toList(filter.getElements("category"))) {
+                    when (category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()) {
+                        "android.intent.category.LAUNCHER" -> hasLauncher = true
+                        "android.intent.category.MULTIWINDOW_LAUNCHER" -> hasMultiWindow = true
+                    }
+                }
+                if (hasMain && hasLauncher && !hasMultiWindow) {
+                    filter.addElement("category")
+                        .getOrCreateAndroidAttribute("name", ATTR_NAME)
+                        .setValueAsString("android.intent.category.MULTIWINDOW_LAUNCHER")
                 }
             }
         }
