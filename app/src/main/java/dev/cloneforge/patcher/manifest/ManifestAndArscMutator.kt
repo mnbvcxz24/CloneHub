@@ -248,7 +248,7 @@ class ManifestAndArscMutator {
 
         // 8. Patch labels and apply the first-stage floating-window experiment.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
-        patchFloatingWindowLauncher(appElement)
+        patchFloatingWindowLauncher(appElement, clonePkg)
 
         // 9. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
         mutateResXmlFiles(apkModule, origPkg, cloneSuffix, authorityMap, accountTypeMap)
@@ -419,7 +419,7 @@ class ManifestAndArscMutator {
      * restore it. This intentionally does not force every Activity into a
      * dialog theme because games often use SurfaceView/OpenGL/Unity activities.
      */
-    private fun patchFloatingWindowLauncher(appElement: ResXmlElement) {
+    private fun patchFloatingWindowLauncher(appElement: ResXmlElement, clonePackage: String) {
         // Android 10+ multi-resume hint. This does not force freeform support.
         val multiResume = appElement.newElement(TAG_META_DATA)
         multiResume.getOrCreateAndroidAttribute("name", ATTR_NAME)
@@ -457,7 +457,7 @@ class ManifestAndArscMutator {
                 getOrCreateAndroidAttribute("name", ATTR_NAME)
                     .setValueAsString("com.fuku.cloneruntime.PipRuntimeInitializer")
                 getOrCreateAndroidAttribute("authorities", ATTR_AUTHORITIES)
-                    .setValueAsString(appElement.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString().orEmpty() + ".fuku.runtime")
+                    .setValueAsString("$clonePackage.fuku.runtime")
                 getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(false)
                 getOrCreateAndroidAttribute("initOrder", ATTR_INIT_ORDER).apply {
                     setValueType(ValueType.DEC)

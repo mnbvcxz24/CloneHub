@@ -125,7 +125,7 @@ public final class PipRuntimeController {
         overlay.addView(bar, barParams);
         overlay.setClickable(false);
         bar.setClickable(true);
-        bar.setOnTouchListener(new View.OnTouchListener() {
+        title.setOnTouchListener(new View.OnTouchListener() {
             private int startX, startY;
             private float downX, downY;
             @Override public boolean onTouch(View view, MotionEvent event) {
