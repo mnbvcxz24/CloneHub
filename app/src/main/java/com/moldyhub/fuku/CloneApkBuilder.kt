@@ -134,25 +134,25 @@ class CloneApkBuilder(private val context: Context) {
             )
         }
 
-        // Normalize every mutated APK only after all manifest/resource rewrites.
-        // Android 11+ requires resources.arsc to be uncompressed and 4-byte aligned.
-        stagedApks.forEachIndexed { index, apk ->
-            normalizeAndVerifyApk(apk, if (index == 0) loadCloneRuntimeDex() else null)
-        }
-
+        // Normalize and validate each final signed APK. Signing can change ZIP layout,
+        // so test each padding variant against the artifact that will actually be installed.
         val signer = loadOrCreateSigner()
         val outputDir = File(context.filesDir, "clones/$clonePackage").apply {
             if (exists()) deleteRecursively()
             mkdirs()
         }
-        val signedApks = stagedApks.map { input ->
+        val signedApks = stagedApks.mapIndexed { index, input ->
             val output = File(outputDir, input.name)
-            signApk(input, output, signer.first, signer.second)
+            normalizeSignAndVerifyApk(
+                input,
+                output,
+                if (index == 0) loadCloneRuntimeDex() else null,
+                signer.first,
+                signer.second
+            )
             output
         }
         require(signedApks.all { it.isFile && it.length() > 0L }) { "One or more signed APKs are empty." }
-        // Verify the exact signed artifacts used for installation/export.
-        signedApks.forEach { verifyResourcesArscAlignment(it) }
 
         val singleApk = signedApks.size == 1
         val number = cloneIndex.toString().padStart(3, '0')
@@ -177,23 +177,44 @@ class CloneApkBuilder(private val context: Context) {
     }
 
     /**
-     * Rewrites the final mutated APK while retaining ZIP compression methods.
-     * resources.arsc is always STORED and receives a ZIP extra-field padding
-     * block so its data begins on a 4-byte boundary, as required on Android 11+.
+     * Rewrites, signs, and validates each padding variant. The signed APK is
+     * authoritative: the variant is accepted only when its resources.arsc
+     * payload is STORED and starts at a 4-byte boundary after signing.
      */
-    private fun normalizeAndVerifyApk(apkFile: File, runtimeDex: ByteArray?) {
+    private fun normalizeSignAndVerifyApk(
+        apkFile: File,
+        outputFile: File,
+        runtimeDex: ByteArray?,
+        key: PrivateKey,
+        certificate: X509Certificate
+    ) {
         var pendingDex = runtimeDex
-        var aligned = false
+        var lastAlignmentError: IllegalArgumentException? = null
         for (nudge in 0..3) {
             rewriteApkForAndroidInstall(apkFile, pendingDex, nudge)
             pendingDex = null
-            val info = resourcesArscInfo(apkFile)
-            if (info == null || (info.second % 4L == 0L && info.first == ZipEntry.STORED)) {
-                aligned = true
-                break
+
+            val normalizedInfo = resourcesArscInfo(apkFile)
+            if (normalizedInfo != null) {
+                require(normalizedInfo.first == ZipEntry.STORED) {
+                    "APK normalization failed: resources.arsc is still compressed."
+                }
+            }
+
+            if (outputFile.exists() && !outputFile.delete()) {
+                error("Could not replace the previous signed APK candidate.")
+            }
+            signApk(apkFile, outputFile, key, certificate)
+            try {
+                verifyResourcesArscAlignment(outputFile)
+                return
+            } catch (error: IllegalArgumentException) {
+                if (!error.message.orEmpty().contains("resources.arsc is misaligned")) throw error
+                lastAlignmentError = error
             }
         }
-        require(aligned) { "APK normalization failed: resources.arsc could not be aligned." }
+        throw lastAlignmentError
+            ?: IllegalStateException("APK normalization failed: signed resources.arsc could not be aligned.")
     }
 
     private fun verifyResourcesArscAlignment(apkFile: File) {
