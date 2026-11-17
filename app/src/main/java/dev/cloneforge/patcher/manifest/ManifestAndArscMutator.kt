@@ -448,9 +448,9 @@ class ManifestAndArscMutator {
 
         // Register the injected clone-side runtime before the first Activity is created.
         val runtimeProviderExists = collectComponents(appElement).any { provider ->
+            val providerName = provider.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
             provider.equalsName(TAG_PROVIDER) &&
-                provider.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
-                    == "com.fuku.cloneruntime.PipRuntimeInitializer"
+                providerName == "com.fuku.cloneruntime.PipRuntimeInitializer"
         }
         if (!runtimeProviderExists) {
             appElement.newElement(TAG_PROVIDER).apply {
