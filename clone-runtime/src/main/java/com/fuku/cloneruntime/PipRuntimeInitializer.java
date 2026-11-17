@@ -13,8 +13,12 @@ public final class PipRuntimeInitializer extends ContentProvider {
         if (getContext() == null) return false;
         Application application = (Application) getContext().getApplicationContext();
         application.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
-            @Override public void onActivityCreated(Activity activity, android.os.Bundle state) { }
-            @Override public void onActivityStarted(Activity activity) { }
+            @Override public void onActivityCreated(Activity activity, android.os.Bundle state) {
+                PipRuntimeController.onActivityCreated(activity);
+            }
+            @Override public void onActivityStarted(Activity activity) {
+                PipRuntimeController.onActivityResumed(activity);
+            }
             @Override public void onActivityResumed(Activity activity) {
                 PipRuntimeController.onActivityResumed(activity);
             }
