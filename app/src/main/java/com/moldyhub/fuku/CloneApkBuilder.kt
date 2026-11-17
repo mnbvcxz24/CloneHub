@@ -117,6 +117,7 @@ class CloneApkBuilder(private val context: Context) {
         )
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)
+        injectCloneRuntimeDex(stagedApks.first())
         require(mutation.mutatedPackage == clonePackage) { "Manifest package mutation did not complete." }
 
         val authorities = mutation.authorityMap.toMutableMap()
@@ -160,6 +161,64 @@ class CloneApkBuilder(private val context: Context) {
         outputDir.deleteRecursively()
         staging.deleteRecursively()
         return CloneBuildOutcome(clonePackage, cloneName, savedLocation)
+    }
+
+    /**
+     * Adds the framework-only clone runtime as a secondary DEX in base.apk.
+     * D8 generates this asset during the Fuku build, so the installed clone
+     * owns its runtime and does not depend on the Fuku process.
+     */
+    private fun injectCloneRuntimeDex(apkFile: File) {
+        val runtimeDex = context.assets.open("clone-runtime.dex").use { it.readBytes() }
+        require(runtimeDex.isNotEmpty()) { "The clone runtime DEX is empty." }
+
+        val existingDexNames = linkedSetOf<String>()
+        java.util.zip.ZipFile(apkFile).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val name = entries.nextElement().name
+                if (name.matches(Regex("classes(\\d*)\\.dex"))) existingDexNames.add(name)
+            }
+        }
+        var index = 2
+        var dexName = "classes$index.dex"
+        while (dexName in existingDexNames) {
+            index++
+            dexName = "classes$index.dex"
+        }
+
+        val temporary = File(apkFile.parentFile, apkFile.name + ".runtime.tmp")
+        java.util.zip.ZipFile(apkFile).use { input ->
+            java.util.zip.ZipOutputStream(FileOutputStream(temporary)).use { output ->
+                val entries = input.entries()
+                val buffer = ByteArray(64 * 1024)
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val copy = ZipEntry(entry.name)
+                    copy.time = entry.time
+                    output.putNextEntry(copy)
+                    input.getInputStream(entry).use { stream ->
+                        while (true) {
+                            val count = stream.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                    output.closeEntry()
+                }
+                output.putNextEntry(ZipEntry(dexName))
+                output.write(runtimeDex)
+                output.closeEntry()
+            }
+        }
+        if (!apkFile.delete()) {
+            temporary.delete()
+            error("Could not replace base APK after injecting clone runtime.")
+        }
+        if (!temporary.renameTo(apkFile)) {
+            temporary.copyTo(apkFile, overwrite = true)
+            temporary.delete()
+        }
     }
 
     private fun installApks(clonePackage: String, signedApks: List<File>) {

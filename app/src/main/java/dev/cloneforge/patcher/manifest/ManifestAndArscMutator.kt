@@ -56,6 +56,8 @@ class ManifestAndArscMutator {
         private const val ATTR_THEME = 0x01010000
         private const val ATTR_AUTHORITIES = 0x01010018
         private const val ATTR_META_VALUE = 0x01010024
+        private const val ATTR_EXPORTED = 0x01010010
+        private const val ATTR_INIT_ORDER = 0x0101001a
         private const val ATTR_TARGET_ACTIVITY = 0x01010202
         private const val ATTR_APP_COMPONENT_FACTORY = 0x0101057a
         private const val ATTR_EXTRACT_NATIVE_LIBS = 0x010104ea
@@ -443,6 +445,26 @@ class ManifestAndArscMutator {
             .setValueAsString("com.lge.support.SPLIT_WINDOW")
         lgSupport.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
             .setValueAsBoolean(true)
+
+        // Register the injected clone-side runtime before the first Activity is created.
+        val runtimeProviderExists = collectComponents(appElement).any { provider ->
+            provider.equalsName(TAG_PROVIDER) &&
+                provider.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
+                    == "com.fuku.cloneruntime.PipRuntimeInitializer"
+        }
+        if (!runtimeProviderExists) {
+            appElement.newElement(TAG_PROVIDER).apply {
+                getOrCreateAndroidAttribute("name", ATTR_NAME)
+                    .setValueAsString("com.fuku.cloneruntime.PipRuntimeInitializer")
+                getOrCreateAndroidAttribute("authorities", ATTR_AUTHORITIES)
+                    .setValueAsString(appElement.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString().orEmpty() + ".fuku.runtime")
+                getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(false)
+                getOrCreateAndroidAttribute("initOrder", ATTR_INIT_ORDER).apply {
+                    setValueType(ValueType.DEC)
+                    setData(1000)
+                }
+            }
+        }
 
         for (component in collectComponents(appElement)) {
             if (!component.equalsName("activity") && !component.equalsName("activity-alias")) {
