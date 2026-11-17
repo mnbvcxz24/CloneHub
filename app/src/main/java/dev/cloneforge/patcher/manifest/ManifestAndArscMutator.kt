@@ -185,6 +185,7 @@ class ManifestAndArscMutator {
 
         // 6. Traverse all component elements inside <application>.
         for (comp in collectComponents(appElement)) {
+            ensureExplicitExportedForIntentFilters(comp)
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
@@ -293,6 +294,7 @@ class ManifestAndArscMutator {
         val appElement = CollectionUtil.toList(rootManifest.getElements(TAG_APPLICATION)).firstOrNull()
         if (appElement != null) {
             for (comp in collectComponents(appElement)) {
+                ensureExplicitExportedForIntentFilters(comp)
                 val nameAttr = comp.searchAttributeByResourceId(ATTR_NAME)
                 val compName = nameAttr?.getValueAsString()
                 if (!compName.isNullOrBlank()) {
@@ -349,6 +351,20 @@ class ManifestAndArscMutator {
             }
         }
         return result
+    }
+
+    /**
+     * Android 12+ rejects target-31+ APKs when a component with an intent filter
+     * omits android:exported. Preserve the platform's historical defaults:
+     * activities/services/receivers with filters are exported; providers are not.
+     * Writing the value explicitly is also harmless for older target SDKs.
+     */
+    private fun ensureExplicitExportedForIntentFilters(component: ResXmlElement) {
+        val hasIntentFilter = CollectionUtil.toList(component.getElements("intent-filter")).isNotEmpty()
+        if (!hasIntentFilter || component.searchAttributeByResourceId(ATTR_EXPORTED) != null) return
+
+        component.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
+            .setValueAsBoolean(!component.equalsName(TAG_PROVIDER))
     }
 
     private fun expandClassName(origPkg: String, rawName: String): String {
