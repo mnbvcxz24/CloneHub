@@ -137,7 +137,7 @@ class CloneApkBuilder(private val context: Context) {
         // Normalize every mutated APK only after all manifest/resource rewrites.
         // Android 11+ requires resources.arsc to be uncompressed and 4-byte aligned.
         stagedApks.forEachIndexed { index, apk ->
-            rewriteApkForAndroidInstall(apk, if (index == 0) loadCloneRuntimeDex() else null)
+            normalizeAndVerifyApk(apk, if (index == 0) loadCloneRuntimeDex() else null)
         }
 
         val signer = loadOrCreateSigner()
@@ -151,6 +151,8 @@ class CloneApkBuilder(private val context: Context) {
             output
         }
         require(signedApks.all { it.isFile && it.length() > 0L }) { "One or more signed APKs are empty." }
+        // Verify the exact signed artifacts used for installation/export.
+        signedApks.forEach { verifyResourcesArscAlignment(it) }
 
         val singleApk = signedApks.size == 1
         val number = cloneIndex.toString().padStart(3, '0')
@@ -179,7 +181,89 @@ class CloneApkBuilder(private val context: Context) {
      * resources.arsc is always STORED and receives a ZIP extra-field padding
      * block so its data begins on a 4-byte boundary, as required on Android 11+.
      */
-    private fun rewriteApkForAndroidInstall(apkFile: File, runtimeDex: ByteArray?) {
+    private fun normalizeAndVerifyApk(apkFile: File, runtimeDex: ByteArray?) {
+        var pendingDex = runtimeDex
+        var aligned = false
+        for (nudge in 0..3) {
+            rewriteApkForAndroidInstall(apkFile, pendingDex, nudge)
+            pendingDex = null
+            val info = resourcesArscInfo(apkFile)
+            if (info == null || (info.second % 4L == 0L && info.first == ZipEntry.STORED)) {
+                aligned = true
+                break
+            }
+        }
+        require(aligned) { "APK normalization failed: resources.arsc could not be aligned." }
+    }
+
+    private fun verifyResourcesArscAlignment(apkFile: File) {
+        val info = resourcesArscInfo(apkFile) ?: return
+        require(info.first == ZipEntry.STORED) {
+            "Signed APK validation failed: resources.arsc is compressed in ${apkFile.name}."
+        }
+        require(info.second % 4L == 0L) {
+            "Signed APK validation failed: resources.arsc is misaligned in ${apkFile.name} (offset ${info.second})."
+        }
+    }
+
+    /** Returns the compression method and actual data offset from ZIP headers. */
+    private fun resourcesArscInfo(apkFile: File): Pair<Int, Long>? {
+        java.io.RandomAccessFile(apkFile, "r").use { file ->
+            val length = file.length()
+            val scanStart = (length - 65_557L).coerceAtLeast(0L)
+            var eocd = -1L
+            var cursor = length - 22L
+            while (cursor >= scanStart) {
+                file.seek(cursor)
+                if (readLeInt(file) == 0x06054b50L) { eocd = cursor; break }
+                cursor--
+            }
+            require(eocd >= 0L) { "APK ZIP end record is missing: ${apkFile.name}." }
+            file.seek(eocd + 10L)
+            val entryCount = readLeShort(file)
+            file.seek(eocd + 16L)
+            val centralOffset = readLeInt(file)
+            var position = centralOffset
+            repeat(entryCount) {
+                file.seek(position)
+                require(readLeInt(file) == 0x02014b50L) { "APK central directory is invalid: ${apkFile.name}." }
+                file.seek(position + 10L)
+                val method = readLeShort(file)
+                file.seek(position + 28L)
+                val nameLength = readLeShort(file)
+                val extraLength = readLeShort(file)
+                val commentLength = readLeShort(file)
+                file.seek(position + 42L)
+                val localHeaderOffset = readLeInt(file)
+                val name = ByteArray(nameLength)
+                file.readFully(name)
+                if (String(name, Charsets.UTF_8) == "resources.arsc") {
+                    file.seek(localHeaderOffset)
+                    require(readLeInt(file) == 0x04034b50L) { "resources.arsc local header is invalid." }
+                    file.seek(localHeaderOffset + 26L)
+                    val localNameLength = readLeShort(file)
+                    val localExtraLength = readLeShort(file)
+                    return method to (localHeaderOffset + 30L + localNameLength + localExtraLength)
+                }
+                position += 46L + nameLength + extraLength + commentLength
+            }
+            return null
+        }
+    }
+
+    private fun readLeShort(file: java.io.RandomAccessFile): Int {
+        val a = file.read(); val b = file.read()
+        require(a >= 0 && b >= 0) { "Unexpected end of APK ZIP data." }
+        return a or (b shl 8)
+    }
+
+    private fun readLeInt(file: java.io.RandomAccessFile): Long {
+        val a = readLeShort(file).toLong()
+        val b = readLeShort(file).toLong()
+        return a or (b shl 16)
+    }
+
+    private fun rewriteApkForAndroidInstall(apkFile: File, runtimeDex: ByteArray?, alignmentNudge: Int) {
         val existingDexNames = linkedSetOf<String>()
         java.util.zip.ZipFile(apkFile).use { zip ->
             val entries = zip.entries()
@@ -222,7 +306,11 @@ class CloneApkBuilder(private val context: Context) {
                                 size = source.size
                                 compressedSize = source.size
                                 crc = source.crc
-                                extra = alignedExtra(counted.count, source.name)
+                                extra = if (source.name == "resources.arsc") {
+                                    alignedExtra(counted.count, source.name, alignmentNudge)
+                                } else {
+                                    source.extra
+                                }
                             }
                         }
                         output.putNextEntry(target)
@@ -250,13 +338,9 @@ class CloneApkBuilder(private val context: Context) {
                 temporary.delete()
             }
 
-            java.util.zip.ZipFile(apkFile).use { zip ->
-                val resources = zip.getEntry("resources.arsc")
-                if (resources != null) {
-                    require(resources.method == ZipEntry.STORED) {
-                        "APK normalization failed: resources.arsc is still compressed."
-                    }
-                }
+            val resources = resourcesArscInfo(apkFile)
+            if (resources != null) require(resources.first == ZipEntry.STORED) {
+                "APK normalization failed: resources.arsc is still compressed."
             }
         } finally {
             if (temporary.exists()) temporary.delete()
@@ -267,9 +351,10 @@ class CloneApkBuilder(private val context: Context) {
      * ZIP extra field 0xD935 is padding only. Its length is selected so the
      * following STORED entry payload starts at a 4-byte boundary.
      */
-    private fun alignedExtra(currentOffset: Long, entryName: String): ByteArray {
+    private fun alignedExtra(currentOffset: Long, entryName: String, alignmentNudge: Int): ByteArray {
         val nameLength = entryName.toByteArray(Charsets.UTF_8).size
-        val paddingLength = ((4 - ((currentOffset + 30L + nameLength + 4L) % 4L)) % 4L).toInt()
+        val basePadding = ((4 - ((currentOffset + 30L + nameLength + 4L) % 4L)) % 4L).toInt()
+        val paddingLength = (basePadding + alignmentNudge) % 4
         return byteArrayOf(0x35, 0xD9.toByte(), paddingLength.toByte(), 0x00) + ByteArray(paddingLength)
     }
 
