@@ -117,7 +117,6 @@ class CloneApkBuilder(private val context: Context) {
         )
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)
-        injectCloneRuntimeDex(stagedApks.first())
         require(mutation.mutatedPackage == clonePackage) { "Manifest package mutation did not complete." }
 
         val authorities = mutation.authorityMap.toMutableMap()
@@ -133,6 +132,12 @@ class CloneApkBuilder(private val context: Context) {
                 permissionMap = permissions,
                 accountTypeMap = accounts
             )
+        }
+
+        // Normalize every mutated APK only after all manifest/resource rewrites.
+        // Android 11+ requires resources.arsc to be uncompressed and 4-byte aligned.
+        stagedApks.forEachIndexed { index, apk ->
+            rewriteApkForAndroidInstall(apk, if (index == 0) loadCloneRuntimeDex() else null)
         }
 
         val signer = loadOrCreateSigner()
@@ -163,15 +168,18 @@ class CloneApkBuilder(private val context: Context) {
         return CloneBuildOutcome(clonePackage, cloneName, savedLocation)
     }
 
-    /**
-     * Adds the framework-only clone runtime as a secondary DEX in base.apk.
-     * D8 generates this asset during the Fuku build, so the installed clone
-     * owns its runtime and does not depend on the Fuku process.
-     */
-    private fun injectCloneRuntimeDex(apkFile: File) {
-        val runtimeDex = context.assets.open("clone-runtime.dex").use { it.readBytes() }
-        require(runtimeDex.isNotEmpty()) { "The clone runtime DEX is empty." }
+    private fun loadCloneRuntimeDex(): ByteArray {
+        return context.assets.open("clone-runtime.dex").use { it.readBytes() }.also {
+            require(it.isNotEmpty()) { "The clone runtime DEX is empty." }
+        }
+    }
 
+    /**
+     * Rewrites the final mutated APK while retaining ZIP compression methods.
+     * resources.arsc is always STORED and receives a ZIP extra-field padding
+     * block so its data begins on a 4-byte boundary, as required on Android 11+.
+     */
+    private fun rewriteApkForAndroidInstall(apkFile: File, runtimeDex: ByteArray?) {
         val existingDexNames = linkedSetOf<String>()
         java.util.zip.ZipFile(apkFile).use { zip ->
             val entries = zip.entries()
@@ -180,44 +188,104 @@ class CloneApkBuilder(private val context: Context) {
                 if (name.matches(Regex("classes(\\d*)\\.dex"))) existingDexNames.add(name)
             }
         }
-        var index = 2
-        var dexName = "classes$index.dex"
-        while (dexName in existingDexNames) {
-            index++
-            dexName = "classes$index.dex"
+
+        var runtimeDexName: String? = null
+        if (runtimeDex != null) {
+            var index = 2
+            var candidate = "classes${index}.dex"
+            while (candidate in existingDexNames) {
+                index++
+                candidate = "classes${index}.dex"
+            }
+            runtimeDexName = candidate
         }
 
-        val temporary = File(apkFile.parentFile, apkFile.name + ".runtime.tmp")
-        java.util.zip.ZipFile(apkFile).use { input ->
-            java.util.zip.ZipOutputStream(FileOutputStream(temporary)).use { output ->
-                val entries = input.entries()
-                val buffer = ByteArray(64 * 1024)
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    val copy = ZipEntry(entry.name)
-                    copy.time = entry.time
-                    output.putNextEntry(copy)
-                    input.getInputStream(entry).use { stream ->
-                        while (true) {
-                            val count = stream.read(buffer)
-                            if (count < 0) break
-                            output.write(buffer, 0, count)
+        val temporary = File(apkFile.parentFile, apkFile.name + ".aligned.tmp")
+        try {
+            java.util.zip.ZipFile(apkFile).use { input ->
+                val counted = CountingOutputStream(FileOutputStream(temporary))
+                java.util.zip.ZipOutputStream(counted).use { output ->
+                    val entries = input.entries()
+                    val buffer = ByteArray(64 * 1024)
+                    while (entries.hasMoreElements()) {
+                        val source = entries.nextElement()
+                        val forceStored = source.name == "resources.arsc"
+                        val method = if (forceStored) ZipEntry.STORED else source.method
+                        require(method == ZipEntry.STORED || method == ZipEntry.DEFLATED) {
+                            "Unsupported ZIP compression method for ${source.name}: $method"
                         }
+                        val target = ZipEntry(source.name).apply {
+                            time = source.time
+                            source.comment?.let { comment = it }
+                            this.method = method
+                            if (method == ZipEntry.STORED) {
+                                size = source.size
+                                compressedSize = source.size
+                                crc = source.crc
+                                extra = alignedExtra(counted.count, source.name)
+                            }
+                        }
+                        output.putNextEntry(target)
+                        input.getInputStream(source).use { stream ->
+                            while (true) {
+                                val read = stream.read(buffer)
+                                if (read < 0) break
+                                output.write(buffer, 0, read)
+                            }
+                        }
+                        output.closeEntry()
                     }
-                    output.closeEntry()
+
+                    if (runtimeDexName != null && runtimeDex != null) {
+                        output.putNextEntry(ZipEntry(runtimeDexName))
+                        output.write(runtimeDex)
+                        output.closeEntry()
+                    }
                 }
-                output.putNextEntry(ZipEntry(dexName))
-                output.write(runtimeDex)
-                output.closeEntry()
             }
+
+            if (!apkFile.delete()) error("Could not replace APK after ZIP alignment.")
+            if (!temporary.renameTo(apkFile)) {
+                temporary.copyTo(apkFile, overwrite = true)
+                temporary.delete()
+            }
+
+            java.util.zip.ZipFile(apkFile).use { zip ->
+                val resources = zip.getEntry("resources.arsc")
+                if (resources != null) {
+                    require(resources.method == ZipEntry.STORED) {
+                        "APK normalization failed: resources.arsc is still compressed."
+                    }
+                }
+            }
+        } finally {
+            if (temporary.exists()) temporary.delete()
         }
-        if (!apkFile.delete()) {
-            temporary.delete()
-            error("Could not replace base APK after injecting clone runtime.")
+    }
+
+    /**
+     * ZIP extra field 0xD935 is padding only. Its length is selected so the
+     * following STORED entry payload starts at a 4-byte boundary.
+     */
+    private fun alignedExtra(currentOffset: Long, entryName: String): ByteArray {
+        val nameLength = entryName.toByteArray(Charsets.UTF_8).size
+        val paddingLength = ((4 - ((currentOffset + 30L + nameLength + 4L) % 4L)) % 4L).toInt()
+        return byteArrayOf(0x35, 0xD9.toByte(), paddingLength.toByte(), 0x00) + ByteArray(paddingLength)
+    }
+
+    private class CountingOutputStream(output: java.io.OutputStream) :
+        java.io.FilterOutputStream(output) {
+        var count: Long = 0
+            private set
+
+        override fun write(value: Int) {
+            out.write(value)
+            count++
         }
-        if (!temporary.renameTo(apkFile)) {
-            temporary.copyTo(apkFile, overwrite = true)
-            temporary.delete()
+
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            out.write(bytes, offset, length)
+            count += length
         }
     }
 
