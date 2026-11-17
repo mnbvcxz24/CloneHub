@@ -1,3 +1,5 @@
+import java.util.zip.ZipFile
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -75,7 +77,7 @@ val generateCloneRuntimeDex by tasks.registering(JavaExec::class) {
         check(aar.isFile) { "Clone runtime AAR was not built: $aar" }
         val jarOut = runtimeClassesJar.get().asFile
         jarOut.parentFile.mkdirs()
-        java.util.zip.ZipFile(aar).use { zip ->
+        ZipFile(aar).use { zip ->
             val entry = zip.getEntry("classes.jar") ?: error("Clone runtime AAR has no classes.jar")
             zip.getInputStream(entry).use { input -> jarOut.outputStream().use { input.copyTo(it) } }
         }
@@ -88,7 +90,7 @@ val generateCloneRuntimeDex by tasks.registering(JavaExec::class) {
             "--output", dexDir.absolutePath, jarOut.absolutePath)
     }
     doLast {
-        val dex = runtimeDexDir.get().file("classes.dex").get().asFile
+        val dex = File(runtimeDexDir.get().asFile, "classes.dex")
         check(dex.isFile && dex.length() > 0L) { "D8 did not produce clone runtime classes.dex" }
         val assets = runtimeAssetsDir.get().asFile
         assets.mkdirs()
