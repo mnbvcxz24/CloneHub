@@ -86,6 +86,9 @@ public final class PipRuntimeController {
         TextView minimize = control(activity, "−", 0);
         TextView maximize = control(activity, "□", 0);
         TextView close = control(activity, "×", 0);
+        minimize.setContentDescription("Minimize cloned app");
+        maximize.setContentDescription("Maximize or restore cloned app");
+        close.setContentDescription("Close cloned app");
         bar.addView(title, new LinearLayout.LayoutParams(0, dp(activity, 42), 1));
         bar.addView(minimize, new LinearLayout.LayoutParams(dp(activity, 38), dp(activity, 42)));
         bar.addView(maximize, new LinearLayout.LayoutParams(dp(activity, 38), dp(activity, 42)));
@@ -141,8 +144,21 @@ public final class PipRuntimeController {
                         Intent bringBack = new Intent(activity, activity.getClass());
                         bringBack.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                                 | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                        try { activity.startActivity(bringBack); }
-                        catch (RuntimeException ignored) { }
+                        try {
+                            android.util.DisplayMetrics metrics =
+                                    activity.getResources().getDisplayMetrics();
+                            int width = Math.max(dp(activity, 280),
+                                    Math.round(metrics.widthPixels * 0.72f));
+                            int height = Math.max(dp(activity, 240),
+                                    Math.round(metrics.heightPixels * 0.72f));
+                            int left = Math.max(0, (metrics.widthPixels - width) / 2);
+                            int top = Math.max(0, (metrics.heightPixels - height) / 3);
+                            android.app.ActivityOptions restoreOptions =
+                                    android.app.ActivityOptions.makeBasic();
+                            restoreOptions.setLaunchBounds(new android.graphics.Rect(
+                                    left, top, left + width, top + height));
+                            activity.startActivity(bringBack, restoreOptions.toBundle());
+                        } catch (RuntimeException ignored) { }
                     }
                     return true;
                 }
@@ -171,6 +187,8 @@ public final class PipRuntimeController {
         view.setSingleLine(true);
         view.setEllipsize(android.text.TextUtils.TruncateAt.END);
         if (weight == 0) {
+            view.setClickable(true);
+            view.setFocusable(true);
             GradientDrawable buttonBackground = new GradientDrawable();
             buttonBackground.setColor(Color.TRANSPARENT);
             buttonBackground.setCornerRadius(dp(activity, 6));
