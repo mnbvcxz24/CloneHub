@@ -68,19 +68,27 @@ public final class PipRuntimeController {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(activity, 8), 0, dp(activity, 6), 0);
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.rgb(32, 36, 43));
-        background.setCornerRadius(dp(activity, 10));
+        background.setColor(Color.rgb(25, 28, 34));
+        background.setCornerRadius(dp(activity, 9));
+        background.setStroke(dp(activity, 1), Color.rgb(67, 74, 86));
         bar.setBackground(background);
-        bar.setElevation(dp(activity, 10));
+        bar.setElevation(dp(activity, 12));
 
-        TextView title = control(activity, "Fuku", 1);
-        TextView minimize = control(activity, "—", 0);
+        String windowTitle = "Fuku";
+        try {
+            CharSequence appLabel = activity.getPackageManager()
+                    .getApplicationLabel(activity.getApplicationInfo());
+            if (appLabel != null && appLabel.length() > 0) windowTitle = appLabel.toString();
+        } catch (RuntimeException ignored) { }
+
+        TextView title = control(activity, windowTitle, 1);
+        TextView minimize = control(activity, "−", 0);
         TextView maximize = control(activity, "□", 0);
         TextView close = control(activity, "×", 0);
-        bar.addView(title, new LinearLayout.LayoutParams(0, dp(activity, 44), 1));
-        bar.addView(minimize, new LinearLayout.LayoutParams(dp(activity, 42), dp(activity, 44)));
-        bar.addView(maximize, new LinearLayout.LayoutParams(dp(activity, 42), dp(activity, 44)));
-        bar.addView(close, new LinearLayout.LayoutParams(dp(activity, 42), dp(activity, 44)));
+        bar.addView(title, new LinearLayout.LayoutParams(0, dp(activity, 42), 1));
+        bar.addView(minimize, new LinearLayout.LayoutParams(dp(activity, 38), dp(activity, 42)));
+        bar.addView(maximize, new LinearLayout.LayoutParams(dp(activity, 38), dp(activity, 42)));
+        bar.addView(close, new LinearLayout.LayoutParams(dp(activity, 38), dp(activity, 42)));
 
         int type = Build.VERSION.SDK_INT >= 26
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -142,7 +150,7 @@ public final class PipRuntimeController {
         });
 
         minimize.setOnClickListener(v -> {
-            title.setText("Fuku (tap to restore)");
+            title.setText(windowTitle + "  ·  tap to restore");
             activity.moveTaskToBack(true);
         });
         maximize.setOnClickListener(v -> toggleMaximize(activity));
@@ -160,6 +168,16 @@ public final class PipRuntimeController {
         view.setTypeface(Typeface.DEFAULT, weight == 1 ? Typeface.BOLD : Typeface.NORMAL);
         view.setGravity(Gravity.CENTER);
         view.setSingleLine(true);
+        view.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        if (weight == 0) {
+            GradientDrawable buttonBackground = new GradientDrawable();
+            buttonBackground.setColor(Color.TRANSPARENT);
+            buttonBackground.setCornerRadius(dp(activity, 6));
+            view.setBackground(buttonBackground);
+        } else {
+            view.setPadding(dp(activity, 8), 0, dp(activity, 4), 0);
+            view.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        }
         return view;
     }
 
