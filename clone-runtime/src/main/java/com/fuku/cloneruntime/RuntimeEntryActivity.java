@@ -1,6 +1,7 @@
 package com.fuku.cloneruntime;
 
 import android.app.Activity;
+import android.app.ActivityOptions;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -9,6 +10,7 @@ import android.os.Build;
 import android.provider.Settings;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.widget.Button;
@@ -103,7 +105,7 @@ public final class RuntimeEntryActivity extends Activity {
         });
 
         TextView note = new TextView(this);
-        note.setText("Overlay permission enables drawing above other apps; it does not yet move the cloned app content into a system overlay.");
+        note.setText("Fuku requests a resizable window. Android uses the requested floating bounds only on devices that support freeform windows; the control bar can appear over other apps.");
         note.setTextColor(0xFFFFD18A);
         note.setTextSize(12);
         LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
@@ -132,7 +134,16 @@ public final class RuntimeEntryActivity extends Activity {
             }
             Intent game = new Intent().setComponent(new ComponentName(getPackageName(), launcherClass));
             game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(game);
+            ActivityOptions options = ActivityOptions.makeBasic();
+            if (Build.VERSION.SDK_INT >= 24) {
+                android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+                int width = Math.max(dp(280), Math.round(metrics.widthPixels * 0.72f));
+                int height = Math.max(dp(240), Math.round(metrics.heightPixels * 0.72f));
+                int left = Math.max(0, (metrics.widthPixels - width) / 2);
+                int top = Math.max(0, (metrics.heightPixels - height) / 3);
+                options.setLaunchBounds(new Rect(left, top, left + width, top + height));
+            }
+            startActivity(game, options.toBundle());
             getPreferences(MODE_PRIVATE).edit().putBoolean("complete", true).apply();
             finish();
         } catch (Exception error) {
