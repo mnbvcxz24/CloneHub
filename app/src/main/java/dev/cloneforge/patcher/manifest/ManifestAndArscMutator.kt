@@ -116,6 +116,16 @@ class ManifestAndArscMutator {
         val permissionMap = linkedMapOf<String, String>()
         val accountTypeMap = linkedMapOf<String, String>()
 
+        // Overlay access is requested by the clone's first-run runtime setup screen.
+        val overlayPermission = "android.permission.SYSTEM_ALERT_WINDOW"
+        val hasOverlayPermission = CollectionUtil.toList(rootManifest.getElements(TAG_USES_PERMISSION))
+            .any { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == overlayPermission }
+        if (!hasOverlayPermission) {
+            rootManifest.newElement(TAG_USES_PERMISSION)
+                .getOrCreateAndroidAttribute("name", ATTR_NAME)
+                .setValueAsString(overlayPermission)
+        }
+
         // 1. Strip sharedUserId / sharedUserLabel / sharedUserMaxSdkVersion from <manifest>.
         // Leaving sharedUserId causes INSTALL_FAILED_SHARED_USER_INCOMPATIBLE.
         rootManifest.removeAttributesWithId(ATTR_SHARED_USER_ID)
