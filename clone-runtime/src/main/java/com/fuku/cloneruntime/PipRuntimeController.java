@@ -1,16 +1,13 @@
 package com.fuku.cloneruntime;
 
 import android.app.Activity;
-import android.app.PictureInPictureParams;
 import android.content.Intent;
-import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.provider.Settings;
-import android.util.Rational;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -23,7 +20,7 @@ import java.lang.ref.WeakReference;
 import java.util.Map;
 import java.util.WeakHashMap;
 
-/** Clone-side floating-window and PiP runtime. */
+/** Clone-side system floating-window runtime. */
 public final class PipRuntimeController {
     private static WeakReference<Activity> currentActivity = new WeakReference<>(null);
     private static final Map<Activity, View> windowBars = new WeakHashMap<>();
@@ -36,7 +33,6 @@ public final class PipRuntimeController {
     public static void onActivityCreated(Activity activity) {
         if (!isEligibleActivity(activity)) return;
         currentActivity = new WeakReference<>(activity);
-        applyPictureInPictureParams(activity);
         installFloatingControls(activity);
     }
 
@@ -59,14 +55,6 @@ public final class PipRuntimeController {
         removeFloatingControls(activity);
         savedBounds.remove(activity);
         maximized.remove(activity);
-    }
-
-    public static boolean enterCurrentActivity() {
-        Activity activity = currentActivity.get();
-        if (activity == null || activity.isFinishing() || activity.isDestroyed()
-                || Build.VERSION.SDK_INT < 26) return false;
-        try { return activity.enterPictureInPictureMode(buildParams(activity)); }
-        catch (RuntimeException error) { return false; }
     }
 
     private static void installFloatingControls(Activity activity) {
@@ -215,32 +203,4 @@ public final class PipRuntimeController {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }
 
-    private static void applyPictureInPictureParams(Activity activity) {
-        if (Build.VERSION.SDK_INT < 26) return;
-        try { activity.setPictureInPictureParams(buildParams(activity)); }
-        catch (RuntimeException ignored) { }
-    }
-
-    private static PictureInPictureParams buildParams(Activity activity) {
-        int width = activity.getResources().getDisplayMetrics().widthPixels;
-        int height = activity.getResources().getDisplayMetrics().heightPixels;
-        if (activity.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            int longSide = Math.max(width, height);
-            width = longSide;
-            height = Math.min(width, height);
-        } else {
-            int longSide = Math.max(width, height);
-            height = longSide;
-            width = Math.min(width, height);
-        }
-        float ratio = height == 0 ? 16f / 9f : (float) width / height;
-        ratio = Math.max(1f / 2.39f, Math.min(2.39f, ratio));
-        PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
-                .setAspectRatio(new Rational(Math.round(ratio * 1000f), 1000));
-        if (Build.VERSION.SDK_INT >= 31) {
-            builder.setAutoEnterEnabled(true);
-            builder.setSeamlessResizeEnabled(true);
-        }
-        return builder.build();
-    }
 }
