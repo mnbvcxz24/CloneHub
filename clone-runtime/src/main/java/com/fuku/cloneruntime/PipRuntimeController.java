@@ -118,6 +118,7 @@ public final class PipRuntimeController {
         title.setOnTouchListener(new View.OnTouchListener() {
             private int startX, startY;
             private float downX, downY;
+            private boolean dragged;
             @Override public boolean onTouch(View view, MotionEvent event) {
                 WindowManager.LayoutParams current = barParams.get(activity);
                 if (current == null) return false;
@@ -126,30 +127,36 @@ public final class PipRuntimeController {
                     startY = current.y;
                     downX = event.getRawX();
                     downY = event.getRawY();
+                    dragged = false;
                     return true;
                 }
                 if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                    if (Math.abs(event.getRawX() - downX) > dp(activity, 6)
+                            || Math.abs(event.getRawY() - downY) > dp(activity, 6)) dragged = true;
                     current.x = startX + Math.round(event.getRawX() - downX);
                     current.y = startY + Math.round(event.getRawY() - downY);
                     try { manager.updateViewLayout(bar, current); }
                     catch (RuntimeException ignored) { }
                     return true;
                 }
-                return event.getAction() == MotionEvent.ACTION_UP
-                        || event.getAction() == MotionEvent.ACTION_CANCEL;
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    if (!dragged) {
+                        title.setText("Fuku");
+                        Intent bringBack = new Intent(activity, activity.getClass());
+                        bringBack.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                                | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                        try { activity.startActivity(bringBack); }
+                        catch (RuntimeException ignored) { }
+                    }
+                    return true;
+                }
+                return event.getAction() == MotionEvent.ACTION_CANCEL;
             }
         });
 
         minimize.setOnClickListener(v -> {
             title.setText("Fuku (tap to restore)");
             activity.moveTaskToBack(true);
-        });
-        title.setOnClickListener(v -> {
-            Intent bringBack = new Intent(activity, activity.getClass());
-            bringBack.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            try { activity.startActivity(bringBack); }
-            catch (RuntimeException ignored) { }
         });
         maximize.setOnClickListener(v -> toggleMaximize(activity));
         close.setOnClickListener(v -> {
