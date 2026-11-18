@@ -80,8 +80,9 @@ public final class PipRuntimeController {
                     .getApplicationLabel(activity.getApplicationInfo());
             if (appLabel != null && appLabel.length() > 0) windowTitle = appLabel.toString();
         } catch (RuntimeException ignored) { }
+        final String displayTitle = windowTitle;
 
-        TextView title = control(activity, windowTitle, 1);
+        TextView title = control(activity, displayTitle, 1);
         TextView minimize = control(activity, "−", 0);
         TextView maximize = control(activity, "□", 0);
         TextView close = control(activity, "×", 0);
@@ -150,7 +151,7 @@ public final class PipRuntimeController {
         });
 
         minimize.setOnClickListener(v -> {
-            title.setText(windowTitle + "  ·  tap to restore");
+            title.setText(displayTitle + "  ·  tap to restore");
             activity.moveTaskToBack(true);
         });
         maximize.setOnClickListener(v -> toggleMaximize(activity));
