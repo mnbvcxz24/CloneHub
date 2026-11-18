@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -16,15 +19,44 @@ import android.widget.Toast;
 public final class RuntimeEntryActivity extends Activity {
     private static final String META_LAUNCHER = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER";
     private String launchError;
+    private Button permissionButton;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        if (getPreferences(MODE_PRIVATE).getBoolean("complete", false)) {
+        if (getPreferences(MODE_PRIVATE).getBoolean("complete", false) && hasOverlayPermission()) {
             launchOriginalApp();
             return;
         }
         showSetup();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (permissionButton != null) updatePermissionButton();
+    }
+
+    private boolean hasOverlayPermission() {
+        return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this);
+    }
+
+    private void openOverlaySettings() {
+        if (Build.VERSION.SDK_INT < 23 || hasOverlayPermission()) return;
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception error) {
+            Toast.makeText(this, "Could not open overlay permission settings.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void updatePermissionButton() {
+        if (permissionButton == null) return;
+        boolean granted = hasOverlayPermission();
+        permissionButton.setText(granted ? "Overlay permission granted" : "Allow display over other apps");
+        permissionButton.setEnabled(!granted);
     }
 
     private void showSetup() {
@@ -43,22 +75,35 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView description = new TextView(this);
-        description.setText("This is a standalone Fuku clone. Android's native Picture-in-Picture mode is used where the source app and device support it. No overlay permission or root access is required.");
+        description.setText("Fuku needs overlay permission for the floating-window experiment. Allow display over other apps in Android Settings, then continue to launch the clone.");
         description.setTextColor(0xFFCDD3DF);
         description.setTextSize(15);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
         descriptionParams.topMargin = dp(14);
         root.addView(description, descriptionParams);
 
+        permissionButton = new Button(this);
+        permissionButton.setText("Allow display over other apps");
+        LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(-1, -2);
+        permissionParams.topMargin = dp(20);
+        root.addView(permissionButton, permissionParams);
+        permissionButton.setOnClickListener(v -> openOverlaySettings());
+        updatePermissionButton();
+
         Button launchButton = new Button(this);
         launchButton.setText("Continue");
         LinearLayout.LayoutParams launchParams = new LinearLayout.LayoutParams(-1, -2);
         launchParams.topMargin = dp(26);
         root.addView(launchButton, launchParams);
-        launchButton.setOnClickListener(v -> launchOriginalApp());
+        launchButton.setOnClickListener(v -> {
+            if (!hasOverlayPermission()) {
+                openOverlaySettings();
+                Toast.makeText(this, "Grant overlay permission first.", Toast.LENGTH_LONG).show();
+            } else launchOriginalApp();
+        });
 
         TextView note = new TextView(this);
-        note.setText("Tip: while using the app, press Home or swipe up to enter PiP if the app supports Android PiP.");
+        note.setText("Overlay permission enables drawing above other apps; it does not yet move the cloned app content into a system overlay.");
         note.setTextColor(0xFFFFD18A);
         note.setTextSize(12);
         LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
