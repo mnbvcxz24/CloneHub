@@ -39,7 +39,6 @@ public final class PipRuntimeController {
     public static void onActivityResumed(Activity activity) {
         if (!isEligibleActivity(activity)) return;
         currentActivity = new WeakReference<>(activity);
-        applyPictureInPictureParams(activity);
         installFloatingControls(activity);
     }
 
