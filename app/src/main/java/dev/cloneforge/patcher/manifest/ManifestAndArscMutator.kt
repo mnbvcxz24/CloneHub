@@ -206,7 +206,7 @@ class ManifestAndArscMutator {
                         .setValueAsBoolean(true)
                     val configChanges = comp.getOrCreateAndroidAttribute("configChanges", ATTR_CONFIG_CHANGES)
                     val existingConfigChanges = configChanges.getData()
-                    configChanges.setValueType(ValueType.FLAGS)
+                    configChanges.setValueType(ValueType.HEX)
                     configChanges.setData(existingConfigChanges or PIP_CONFIG_CHANGE_FLAGS)
                 }
             }
