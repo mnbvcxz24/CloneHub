@@ -26,7 +26,7 @@ public final class RuntimeEntryActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        if (getPreferences(MODE_PRIVATE).getBoolean("complete", false) && hasOverlayPermission()) {
+        if (getPreferences(MODE_PRIVATE).getBoolean("complete", false)) {
             launchOriginalApp();
             return;
         }
@@ -57,7 +57,9 @@ public final class RuntimeEntryActivity extends Activity {
     private void updatePermissionButton() {
         if (permissionButton == null) return;
         boolean granted = hasOverlayPermission();
-        permissionButton.setText(granted ? "Overlay permission granted" : "Allow display over other apps");
+        permissionButton.setText(granted
+                ? "Floating controls enabled"
+                : "Optional: enable floating controls");
         permissionButton.setEnabled(!granted);
     }
 
@@ -77,7 +79,7 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView description = new TextView(this);
-        description.setText("Fuku needs overlay permission for the floating-window experiment. Allow display over other apps in Android Settings, then continue to launch the clone.");
+        description.setText("Fuku will request a resizable launch window. Android decides whether native freeform mode is available on this device. Overlay permission is optional and only enables Fuku's extra floating controls.");
         description.setTextColor(0xFFCDD3DF);
         description.setTextSize(15);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
@@ -85,7 +87,7 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(description, descriptionParams);
 
         permissionButton = new Button(this);
-        permissionButton.setText("Allow display over other apps");
+        permissionButton.setText("Optional: enable floating controls");
         LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(-1, -2);
         permissionParams.topMargin = dp(20);
         root.addView(permissionButton, permissionParams);
@@ -93,19 +95,14 @@ public final class RuntimeEntryActivity extends Activity {
         updatePermissionButton();
 
         Button launchButton = new Button(this);
-        launchButton.setText("Continue");
+        launchButton.setText("Launch clone");
         LinearLayout.LayoutParams launchParams = new LinearLayout.LayoutParams(-1, -2);
-        launchParams.topMargin = dp(26);
+        launchParams.topMargin = dp(18);
         root.addView(launchButton, launchParams);
-        launchButton.setOnClickListener(v -> {
-            if (!hasOverlayPermission()) {
-                openOverlaySettings();
-                Toast.makeText(this, "Grant overlay permission first.", Toast.LENGTH_LONG).show();
-            } else launchOriginalApp();
-        });
+        launchButton.setOnClickListener(v -> launchOriginalApp());
 
         TextView note = new TextView(this);
-        note.setText("Fuku requests a resizable window. Android uses the requested floating bounds only on devices that support freeform windows; the control bar can appear over other apps.");
+        note.setText("If this device supports freeform windows, Android may open the cloned app in the requested bounds. If not, the app launches normally; Fuku's overlay controls are available only when overlay permission is granted.");
         note.setTextColor(0xFFFFD18A);
         note.setTextSize(12);
         LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
