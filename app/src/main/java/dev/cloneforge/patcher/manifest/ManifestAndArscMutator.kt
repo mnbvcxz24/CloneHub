@@ -237,9 +237,9 @@ class ManifestAndArscMutator {
             mutateComponentPermissions(comp, origPkg, cloneSuffix, permissionMap)
         }
 
-        // 8. Patch labels and apply the first-stage floating-window experiment.
+        // 8. Patch labels and install the QuickNote-style injected floating controller.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
-        patchFloatingWindowLauncher(appElement)
+        patchQuickNoteFloatingRuntime(rootManifest, appElement)
 
         // 9. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
         mutateResXmlFiles(apkModule, origPkg, cloneSuffix, authorityMap, accountTypeMap)
@@ -418,75 +418,58 @@ class ManifestAndArscMutator {
     }
 
     /**
-     * Advertises resizeability to Android and OEM launchers without changing the source
-     * app's theme. In particular, never force Theme.Dialog: it breaks fullscreen games,
-     * SurfaceView, Unity, and OpenGL launchers and does not itself enable freeform mode.
-     *
-     * Native freeform remains controlled by Android/OEM window-management policy. The
-     * Fuku requests initial launch bounds through ActivityOptions; Android/OEM policy
-     * decides whether the clone actually opens in a native freeform window.
+     * Adds the injected QuickNote-style WindowManager service to each clone.
+     * This is an application-owned overlay controller, not Android Activity embedding.
      */
-    private fun patchFloatingWindowLauncher(appElement: ResXmlElement) {
-        fun ensureApplicationMetadata(name: String, value: Boolean) {
-            val existing = CollectionUtil.toList(appElement.getElements(TAG_META_DATA))
-                .firstOrNull {
-                    it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == name
-                }
-            val metadata = existing ?: appElement.newElement(TAG_META_DATA)
-            metadata.getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(name)
-            metadata.getOrCreateAndroidAttribute("value", ATTR_META_VALUE).setValueAsBoolean(value)
+    private fun patchQuickNoteFloatingRuntime(rootManifest: ResXmlElement, appElement: ResXmlElement) {
+        val permissionExists = CollectionUtil.toList(rootManifest.getElements(TAG_USES_PERMISSION))
+            .any { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == "android.permission.SYSTEM_ALERT_WINDOW" }
+        if (!permissionExists) {
+            rootManifest.newElement(TAG_USES_PERMISSION)
+                .getOrCreateAndroidAttribute("name", ATTR_NAME)
+                .setValueAsString("android.permission.SYSTEM_ALERT_WINDOW")
         }
 
-        // Android 10+ multi-resume hint. It is advisory and does not force freeform mode.
-        ensureApplicationMetadata("android.allow_multiple_resumed_activities", true)
+        val serviceName = "com.fuku.cloneruntime.FloatingService"
+        val serviceExists = collectComponents(appElement).any { component ->
+            component.equalsName("service") &&
+                component.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == serviceName
+        }
+        if (!serviceExists) {
+            appElement.newElement("service").apply {
+                getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(serviceName)
+                getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(false)
+                getOrCreateAndroidAttribute("enabled", 0x0101000e).setValueAsBoolean(true)
+                getOrCreateAndroidAttribute("stopWithTask", 0x0101027f).setValueAsBoolean(false)
+            }
+        }
 
-        // OEM hints are advisory only; Android may ignore them.
-        ensureApplicationMetadata("com.samsung.android.sdk.multiwindow.enable", true)
-        ensureApplicationMetadata("com.sec.android.support.multiwindow", true)
-        ensureApplicationMetadata("com.lge.support.SPLIT_WINDOW", true)
-
-        // Route the clone launcher through the injected entry Activity. It launches the
-        // original Activity with ActivityOptions.setLaunchBounds(), Android's public
-        // native-freeform request. Keep the original component enabled for explicit
-        // same-package launches, but remove it from external launcher discovery.
         val launcherComponents = collectComponents(appElement).filter { isLauncherComponent(it) }
         val originalLauncher = launcherComponents.firstOrNull()
             ?.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
             ?.takeIf { it.isNotBlank() }
-            ?: throw IOException("Cannot enable floating launch: no launcher Activity was found.")
+            ?: throw IOException("Cannot install floating runtime: no launcher Activity was found.")
 
         val existingMeta = CollectionUtil.toList(appElement.getElements(TAG_META_DATA))
-            .firstOrNull {
-                it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == META_ORIGINAL_LAUNCHER
-            }
+            .firstOrNull { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == META_ORIGINAL_LAUNCHER }
         val launcherMeta = existingMeta ?: appElement.newElement(TAG_META_DATA)
-        launcherMeta.getOrCreateAndroidAttribute("name", ATTR_NAME)
-            .setValueAsString(META_ORIGINAL_LAUNCHER)
-        launcherMeta.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
-            .setValueAsString(originalLauncher)
+        launcherMeta.getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(META_ORIGINAL_LAUNCHER)
+        launcherMeta.getOrCreateAndroidAttribute("value", ATTR_META_VALUE).setValueAsString(originalLauncher)
 
         launcherComponents.forEach { component ->
-            // Keep the original activity available for explicit same-package launches,
-            // but remove its launcher-discovery signature. Merely setting exported=false
-            // is not sufficient on every OEM launcher and can leave a second icon.
             for (intentFilter in CollectionUtil.toList(component.getElements("intent-filter"))) {
                 for (action in CollectionUtil.toList(intentFilter.getElements("action"))) {
-                    val name = action.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
-                    if (name == "android.intent.action.MAIN") {
-                        action.searchAttributeByResourceId(ATTR_NAME)
-                            ?.setValueAsString("com.fuku.internal.action.ORIGINAL_MAIN")
+                    if (action.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == "android.intent.action.MAIN") {
+                        action.searchAttributeByResourceId(ATTR_NAME)?.setValueAsString("com.fuku.internal.action.ORIGINAL_MAIN")
                     }
                 }
                 for (category in CollectionUtil.toList(intentFilter.getElements("category"))) {
-                    val name = category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
-                    if (name == "android.intent.category.LAUNCHER") {
-                        category.searchAttributeByResourceId(ATTR_NAME)
-                            ?.setValueAsString("com.fuku.internal.category.ORIGINAL_LAUNCHER")
+                    if (category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == "android.intent.category.LAUNCHER") {
+                        category.searchAttributeByResourceId(ATTR_NAME)?.setValueAsString("com.fuku.internal.category.ORIGINAL_LAUNCHER")
                     }
                 }
             }
-            component.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
-                .setValueAsBoolean(false)
+            component.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(false)
         }
 
         val entryExists = collectComponents(appElement).any { component ->
@@ -495,22 +478,15 @@ class ManifestAndArscMutator {
         }
         if (!entryExists) {
             appElement.newElement("activity").apply {
-                getOrCreateAndroidAttribute("name", ATTR_NAME)
-                    .setValueAsString(RUNTIME_ENTRY_ACTIVITY)
-                getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
-                    .setValueAsBoolean(true)
+                getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(RUNTIME_ENTRY_ACTIVITY)
+                getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(true)
                 val filter = newElement("intent-filter")
-                filter.newElement("action")
-                    .getOrCreateAndroidAttribute("name", ATTR_NAME)
+                filter.newElement("action").getOrCreateAndroidAttribute("name", ATTR_NAME)
                     .setValueAsString("android.intent.action.MAIN")
-                filter.newElement("category")
-                    .getOrCreateAndroidAttribute("name", ATTR_NAME)
+                filter.newElement("category").getOrCreateAndroidAttribute("name", ATTR_NAME)
                     .setValueAsString("android.intent.category.LAUNCHER")
             }
         }
-
-        // Do not add the undocumented MULTIWINDOW_LAUNCHER category; it is not
-        // a platform freeform API.
     }
 
     private fun isLauncherComponent(element: ResXmlElement): Boolean {
