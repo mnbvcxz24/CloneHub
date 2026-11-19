@@ -65,9 +65,6 @@ class ManifestAndArscMutator {
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
         private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
         private const val ATTR_RESIZEABLE_ACTIVITY = 0x010104f6
-        private const val ATTR_SUPPORTS_PICTURE_IN_PICTURE = 0x010104f7
-        private const val ATTR_CONFIG_CHANGES = 0x0101001f
-        private const val PIP_CONFIG_CHANGE_FLAGS = 0x00000d80
 
         private const val TAG_APPLICATION = "application"
         private const val TAG_META_DATA = "meta-data"
@@ -116,16 +113,6 @@ class ManifestAndArscMutator {
         val authorityMap = linkedMapOf<String, String>()
         val permissionMap = linkedMapOf<String, String>()
         val accountTypeMap = linkedMapOf<String, String>()
-
-        // Overlay access is requested by the clone's first-run runtime setup screen.
-        val overlayPermission = "android.permission.SYSTEM_ALERT_WINDOW"
-        val hasOverlayPermission = CollectionUtil.toList(rootManifest.getElements(TAG_USES_PERMISSION))
-            .any { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == overlayPermission }
-        if (!hasOverlayPermission) {
-            rootManifest.newElement(TAG_USES_PERMISSION)
-                .getOrCreateAndroidAttribute("name", ATTR_NAME)
-                .setValueAsString(overlayPermission)
-        }
 
         // 1. Strip sharedUserId / sharedUserLabel / sharedUserMaxSdkVersion from <manifest>.
         // Leaving sharedUserId causes INSTALL_FAILED_SHARED_USER_INCOMPATIBLE.
@@ -200,15 +187,7 @@ class ManifestAndArscMutator {
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
-                if (comp.equalsName("activity")) {
-                    // Declare PiP support on the actual cloned Activities, not just the app wrapper.
-                    comp.getOrCreateAndroidAttribute("supportsPictureInPicture", ATTR_SUPPORTS_PICTURE_IN_PICTURE)
-                        .setValueAsBoolean(true)
-                    val configChanges = comp.getOrCreateAndroidAttribute("configChanges", ATTR_CONFIG_CHANGES)
-                    val existingConfigChanges = configChanges.getData()
-                    configChanges.setValueType(ValueType.HEX)
-                    configChanges.setData(existingConfigChanges or PIP_CONFIG_CHANGE_FLAGS)
-                }
+
             }
 
             // Roblox clone activities retain the requested landscape orientation.
@@ -445,7 +424,8 @@ class ManifestAndArscMutator {
      * SurfaceView, Unity, and OpenGL launchers and does not itself enable freeform mode.
      *
      * Native freeform remains controlled by Android/OEM window-management policy. The
-     * injected lifecycle provider only supplies optional Fuku overlay controls.
+     * Fuku requests initial launch bounds through ActivityOptions; Android/OEM policy
+     * decides whether the clone actually opens in a native freeform window.
      */
     private fun patchFloatingWindowLauncher(appElement: ResXmlElement, clonePackage: String) {
         fun ensureApplicationMetadata(name: String, value: Boolean) {
@@ -465,26 +445,6 @@ class ManifestAndArscMutator {
         ensureApplicationMetadata("com.samsung.android.sdk.multiwindow.enable", true)
         ensureApplicationMetadata("com.sec.android.support.multiwindow", true)
         ensureApplicationMetadata("com.lge.support.SPLIT_WINDOW", true)
-
-        // Register the injected clone-side runtime before the first Activity is created.
-        val runtimeProviderExists = collectComponents(appElement).any { provider ->
-            val providerName = provider.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
-            provider.equalsName(TAG_PROVIDER) &&
-                providerName == "com.fuku.cloneruntime.PipRuntimeInitializer"
-        }
-        if (!runtimeProviderExists) {
-            appElement.newElement(TAG_PROVIDER).apply {
-                getOrCreateAndroidAttribute("name", ATTR_NAME)
-                    .setValueAsString("com.fuku.cloneruntime.PipRuntimeInitializer")
-                getOrCreateAndroidAttribute("authorities", ATTR_AUTHORITIES)
-                    .setValueAsString("$clonePackage.fuku.runtime")
-                getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(false)
-                getOrCreateAndroidAttribute("initOrder", ATTR_INIT_ORDER).apply {
-                    setValueType(ValueType.DEC)
-                    setData(1000)
-                }
-            }
-        }
 
         // Preserve every original launcher intent-filter and theme. Do not add the
         // undocumented MULTIWINDOW_LAUNCHER category: it is not a platform freeform API.
