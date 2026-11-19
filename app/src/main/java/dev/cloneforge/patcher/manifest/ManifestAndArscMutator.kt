@@ -84,6 +84,8 @@ class ManifestAndArscMutator {
         private const val NAME_ACCOUNT_TYPE = "accountType"
         private const val NAME_CONTENT_AUTHORITY = "contentAuthority"
         private const val NAME_SEARCH_SUGGEST_AUTHORITY = "searchSuggestAuthority"
+        private const val META_ORIGINAL_LAUNCHER = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER"
+        private const val RUNTIME_ENTRY_ACTIVITY = "com.fuku.cloneruntime.RuntimeEntryActivity"
 
         private const val COMPONENT_TAGS = "activity.service.receiver.provider."
         private val COMPONENT_TAG_LIST =
@@ -240,7 +242,7 @@ class ManifestAndArscMutator {
 
         // 8. Patch labels and apply the first-stage floating-window experiment.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
-        patchFloatingWindowLauncher(appElement, clonePkg)
+        patchFloatingWindowLauncher(appElement)
 
         // 9. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
         mutateResXmlFiles(apkModule, origPkg, cloneSuffix, authorityMap, accountTypeMap)
@@ -427,7 +429,7 @@ class ManifestAndArscMutator {
      * Fuku requests initial launch bounds through ActivityOptions; Android/OEM policy
      * decides whether the clone actually opens in a native freeform window.
      */
-    private fun patchFloatingWindowLauncher(appElement: ResXmlElement, clonePackage: String) {
+    private fun patchFloatingWindowLauncher(appElement: ResXmlElement) {
         fun ensureApplicationMetadata(name: String, value: Boolean) {
             val existing = CollectionUtil.toList(appElement.getElements(TAG_META_DATA))
                 .firstOrNull {
@@ -446,8 +448,53 @@ class ManifestAndArscMutator {
         ensureApplicationMetadata("com.sec.android.support.multiwindow", true)
         ensureApplicationMetadata("com.lge.support.SPLIT_WINDOW", true)
 
-        // Preserve every original launcher intent-filter and theme. Do not add the
-        // undocumented MULTIWINDOW_LAUNCHER category: it is not a platform freeform API.
+        // Route the clone launcher through the injected entry Activity. It launches the
+        // original Activity with ActivityOptions.setLaunchBounds(), Android's public
+        // native-freeform request. Keep the original component enabled for explicit
+        // same-package launches, but remove it from external launcher discovery.
+        val launcherComponents = collectComponents(appElement).filter { isLauncherComponent(it) }
+        val originalLauncher = launcherComponents.firstOrNull()
+            ?.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IOException("Cannot enable floating launch: no launcher Activity was found.")
+
+        val existingMeta = CollectionUtil.toList(appElement.getElements(TAG_META_DATA))
+            .firstOrNull {
+                it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == META_ORIGINAL_LAUNCHER
+            }
+        val launcherMeta = existingMeta ?: appElement.newElement(TAG_META_DATA)
+        launcherMeta.getOrCreateAndroidAttribute("name", ATTR_NAME)
+            .setValueAsString(META_ORIGINAL_LAUNCHER)
+        launcherMeta.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
+            .setValueAsString(originalLauncher)
+
+        launcherComponents.forEach { component ->
+            component.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
+                .setValueAsBoolean(false)
+        }
+
+        val entryExists = collectComponents(appElement).any { component ->
+            component.equalsName("activity") &&
+                component.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == RUNTIME_ENTRY_ACTIVITY
+        }
+        if (!entryExists) {
+            appElement.newElement("activity").apply {
+                getOrCreateAndroidAttribute("name", ATTR_NAME)
+                    .setValueAsString(RUNTIME_ENTRY_ACTIVITY)
+                getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
+                    .setValueAsBoolean(true)
+                val filter = newElement("intent-filter")
+                filter.newElement("action")
+                    .getOrCreateAndroidAttribute("name", ATTR_NAME)
+                    .setValueAsString("android.intent.action.MAIN")
+                filter.newElement("category")
+                    .getOrCreateAndroidAttribute("name", ATTR_NAME)
+                    .setValueAsString("android.intent.category.LAUNCHER")
+            }
+        }
+
+        // Do not add the undocumented MULTIWINDOW_LAUNCHER category; it is not
+        // a platform freeform API.
     }
 
     private fun isLauncherComponent(element: ResXmlElement): Boolean {
