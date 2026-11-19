@@ -155,7 +155,9 @@ public final class PipRuntimeController {
             WindowManager.LayoutParams restore = restoreBounds.remove(activity);
             activity.getWindow().setAttributes(restore);
         } else {
-            restoreBounds.put(activity, new WindowManager.LayoutParams(current));
+            WindowManager.LayoutParams saved = new WindowManager.LayoutParams();
+            saved.copyFrom(current);
+            restoreBounds.put(activity, saved);
             current.width = ViewGroup.LayoutParams.MATCH_PARENT;
             current.height = ViewGroup.LayoutParams.MATCH_PARENT;
             current.x = 0;
