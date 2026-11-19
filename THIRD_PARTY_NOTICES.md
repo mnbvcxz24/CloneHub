@@ -7,3 +7,8 @@ Fuku's binary Android manifest mutation implementation is derived from the manif
 ## ARSCLib
 
 Fuku uses [ARSCLib](https://github.com/REAndroid/ARSCLib) for Android binary resource and manifest parsing. See the upstream project for its license and notices.
+
+
+## QuickNote floating-window implementation
+
+Fuku's injected floating controller is adapted from the floating-window approach in [QuickNote 4](https://github.com/vaclavhodek/quicknote_4), Copyright the upstream contributors. The adaptation uses Android WindowManager application-overlay windows and is independently implemented in Fuku's clone runtime. See the upstream repository for its license and terms.
