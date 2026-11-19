@@ -67,7 +67,6 @@ private fun FloatingAppPanel(context: Context, close: () -> Unit) {
         context.packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
             .asSequence()
             .filter { it.packageName != context.packageName }
-            .filter { (it.flags and ApplicationInfo.FLAG_STOPPED) == 0 }
             .mapNotNull { info ->
                 val launch = context.packageManager.getLaunchIntentForPackage(info.packageName)
                 if (launch == null) null else FloatingLaunchTarget(
