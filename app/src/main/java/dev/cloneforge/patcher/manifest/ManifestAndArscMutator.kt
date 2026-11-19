@@ -53,7 +53,6 @@ class ManifestAndArscMutator {
         private const val ATTR_PROCESS = 0x01010011
         private const val ATTR_TASK_AFFINITY = 0x01010012
         private const val ATTR_LABEL = 0x01010001
-        private const val ATTR_THEME = 0x01010000
         private const val ATTR_AUTHORITIES = 0x01010018
         private const val ATTR_META_VALUE = 0x01010024
         private const val ATTR_EXPORTED = 0x01010010
@@ -429,39 +428,31 @@ class ManifestAndArscMutator {
     }
 
     /**
-     * First-stage experiment based on the dialog-window findings.
+     * Advertises resizeability to Android and OEM launchers without changing the source
+     * app's theme. In particular, never force Theme.Dialog: it breaks fullscreen games,
+     * SurfaceView, Unity, and OpenGL launchers and does not itself enable freeform mode.
      *
-     * Only launcher activities/aliases receive Theme.Dialog. Their previous
-     * theme reference is preserved as clone metadata so a later runtime can
-     * restore it. This intentionally does not force every Activity into a
-     * dialog theme because games often use SurfaceView/OpenGL/Unity activities.
+     * Native freeform remains controlled by Android/OEM window-management policy. The
+     * injected lifecycle provider only supplies optional Fuku overlay controls.
      */
     private fun patchFloatingWindowLauncher(appElement: ResXmlElement, clonePackage: String) {
-        // Android 10+ multi-resume hint. This does not force freeform support.
-        val multiResume = appElement.newElement(TAG_META_DATA)
-        multiResume.getOrCreateAndroidAttribute("name", ATTR_NAME)
-            .setValueAsString("android.allow_multiple_resumed_activities")
-        multiResume.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
-            .setValueAsBoolean(true)
+        fun ensureApplicationMetadata(name: String, value: Boolean) {
+            val existing = CollectionUtil.toList(appElement.getElements(TAG_META_DATA))
+                .firstOrNull {
+                    it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == name
+                }
+            val metadata = existing ?: appElement.newElement(TAG_META_DATA)
+            metadata.getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(name)
+            metadata.getOrCreateAndroidAttribute("value", ATTR_META_VALUE).setValueAsBoolean(value)
+        }
+
+        // Android 10+ multi-resume hint. It is advisory and does not force freeform mode.
+        ensureApplicationMetadata("android.allow_multiple_resumed_activities", true)
 
         // OEM hints are advisory only; Android may ignore them.
-        val samsungMultiWindow = appElement.newElement(TAG_META_DATA)
-        samsungMultiWindow.getOrCreateAndroidAttribute("name", ATTR_NAME)
-            .setValueAsString("com.samsung.android.sdk.multiwindow.enable")
-        samsungMultiWindow.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
-            .setValueAsBoolean(true)
-
-        val samsungSupport = appElement.newElement(TAG_META_DATA)
-        samsungSupport.getOrCreateAndroidAttribute("name", ATTR_NAME)
-            .setValueAsString("com.sec.android.support.multiwindow")
-        samsungSupport.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
-            .setValueAsBoolean(true)
-
-        val lgSupport = appElement.newElement(TAG_META_DATA)
-        lgSupport.getOrCreateAndroidAttribute("name", ATTR_NAME)
-            .setValueAsString("com.lge.support.SPLIT_WINDOW")
-        lgSupport.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
-            .setValueAsBoolean(true)
+        ensureApplicationMetadata("com.samsung.android.sdk.multiwindow.enable", true)
+        ensureApplicationMetadata("com.sec.android.support.multiwindow", true)
+        ensureApplicationMetadata("com.lge.support.SPLIT_WINDOW", true)
 
         // Register the injected clone-side runtime before the first Activity is created.
         val runtimeProviderExists = collectComponents(appElement).any { provider ->
@@ -483,51 +474,8 @@ class ManifestAndArscMutator {
             }
         }
 
-        for (component in collectComponents(appElement)) {
-            if (!component.equalsName("activity") && !component.equalsName("activity-alias")) {
-                continue
-            }
-            if (!isLauncherComponent(component)) continue
-
-            val theme = component.searchAttributeByResourceId(ATTR_THEME)
-            val originalTheme = theme?.valueAsString ?: "__none__"
-
-            // Preserve the source theme value before replacing it.
-            val savedTheme = component.newElement(TAG_META_DATA)
-            savedTheme.getOrCreateAndroidAttribute("name", ATTR_NAME)
-                .setValueAsString("com.fuku.originalTheme")
-            savedTheme.getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
-                .setValueAsString(originalTheme)
-
-            // @android:style/Theme.Dialog (framework resource 0x01030006).
-            component.getOrCreateAndroidAttribute("theme", ATTR_THEME).apply {
-                setValueType(ValueType.REFERENCE)
-                setData(0x01030006)
-            }
-
-            // Keep the launcher discoverable while advertising multi-window
-            // support to launchers/OEMs that recognize this category.
-            for (filter in CollectionUtil.toList(component.getElements("intent-filter"))) {
-                var hasMain = false
-                var hasLauncher = false
-                var hasMultiWindow = false
-                for (action in CollectionUtil.toList(filter.getElements("action"))) {
-                    if (action.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
-                        == "android.intent.action.MAIN") hasMain = true
-                }
-                for (category in CollectionUtil.toList(filter.getElements("category"))) {
-                    when (category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()) {
-                        "android.intent.category.LAUNCHER" -> hasLauncher = true
-                        "android.intent.category.MULTIWINDOW_LAUNCHER" -> hasMultiWindow = true
-                    }
-                }
-                if (hasMain && hasLauncher && !hasMultiWindow) {
-                    filter.newElement("category")
-                        .getOrCreateAndroidAttribute("name", ATTR_NAME)
-                        .setValueAsString("android.intent.category.MULTIWINDOW_LAUNCHER")
-                }
-            }
-        }
+        // Preserve every original launcher intent-filter and theme. Do not add the
+        // undocumented MULTIWINDOW_LAUNCHER category: it is not a platform freeform API.
     }
 
     private fun isLauncherComponent(element: ResXmlElement): Boolean {
