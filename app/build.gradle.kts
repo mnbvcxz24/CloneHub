@@ -12,8 +12,8 @@ android {
         applicationId = "com.moldyhub.fuku"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.4.4-alpha02"
+        versionCode = 9
+        versionName = "0.4.4-alpha03"
     }
     flavorDimensions += "edition"
     productFlavors {
@@ -49,6 +49,7 @@ val cloneRuntimeD8 by configurations.creating
 dependencies {
     cloneRuntimeD8("com.android.tools:r8:8.7.18")
     implementation(platform(libs.compose.bom))
+    implementation("io.github.luiisca.floating.views:1.0.5")
     implementation(libs.core.ktx)
     implementation(libs.arsclib)
     implementation(libs.apksig)
