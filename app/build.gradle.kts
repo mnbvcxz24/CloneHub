@@ -12,8 +12,8 @@ android {
         applicationId = "com.moldyhub.fuku"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.4.4-alpha05"
+        versionCode = 12
+        versionName = "0.4.4-alpha06"
     }
     flavorDimensions += "edition"
     productFlavors {
