@@ -66,32 +66,34 @@ class CloneApkBuilder(private val context: Context) {
             ?: error("Android cannot read the prepared base APK.")
         require(baseInfo.packageName == originalPackage) { "The prepared base APK package ID does not match the workspace." }
 
+        // Keep one stable package ID per source app. Rebuilding the same source
+        // updates its existing clone instead of installing c002, c003, etc.
         val cloneIndex = synchronized(cloneIndexLock) {
             val sequenceFile = File(context.filesDir, "clone-indexes.properties")
             val sequences = Properties()
             if (sequenceFile.isFile) FileInputStream(sequenceFile).use { sequences.load(it) }
-            var next = (sequences.getProperty(originalPackage)?.toIntOrNull() ?: 0) + 1
-            while (next <= MAX_CLONE_INDEX) {
-                val candidatePackage = "$originalPackage.fuku.c${next.toString().padStart(3, '0')}"
-                val installed = try {
-                    context.packageManager.getPackageInfo(candidatePackage, 0)
-                    true
-                } catch (_: PackageManager.NameNotFoundException) {
-                    false
+            val savedIndex = sequences.getProperty(originalPackage)?.toIntOrNull()
+            val existingIndex = if (savedIndex == null || savedIndex !in 1..MAX_CLONE_INDEX) {
+                (1..MAX_CLONE_INDEX).firstOrNull { index ->
+                    val candidatePackage = "$originalPackage.fuku.c${index.toString().padStart(3, '0')}"
+                    try {
+                        context.packageManager.getPackageInfo(candidatePackage, 0)
+                        true
+                    } catch (_: PackageManager.NameNotFoundException) {
+                        false
+                    }
                 }
-                if (!installed) break
-                next++
-            }
-            require(next <= MAX_CLONE_INDEX) { "Clone limit reached for this source app." }
-            sequences.setProperty(originalPackage, next.toString())
+            } else null
+            val stableIndex = savedIndex?.takeIf { it in 1..MAX_CLONE_INDEX } ?: existingIndex ?: 1
+            sequences.setProperty(originalPackage, stableIndex.toString())
             val temporary = File(sequenceFile.parentFile, sequenceFile.name + ".tmp")
-            FileOutputStream(temporary).use { sequences.store(it, "Fuku generated clone indexes") }
+            FileOutputStream(temporary).use { sequences.store(it, "Fuku stable clone indexes") }
             if (sequenceFile.exists() && !sequenceFile.delete()) error("Could not update clone sequence.")
             if (!temporary.renameTo(sequenceFile)) {
                 temporary.copyTo(sequenceFile, overwrite = true)
                 temporary.delete()
             }
-            next
+            stableIndex
         }
         val clonePackage = "$originalPackage.fuku.c${cloneIndex.toString().padStart(3, '0')}"
         val suffix = "fuku_c${cloneIndex.toString().padStart(3, '0')}"
@@ -112,7 +114,7 @@ class CloneApkBuilder(private val context: Context) {
             origPkg = originalPackage,
             clonePkg = clonePackage,
             cloneSuffix = suffix,
-            customAppLabel = "Fuku " + cloneIndex.toString().padStart(3, '0'),
+            customAppLabel = "$appLabel (Fuku)",
             forceLandscape = false
         )
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
@@ -157,7 +159,7 @@ class CloneApkBuilder(private val context: Context) {
         val singleApk = signedApks.size == 1
         val number = cloneIndex.toString().padStart(3, '0')
         val extension = if (singleApk) ".apk" else ".zip"
-        val cloneName = "Fuku $number"
+        val cloneName = "$appLabel - Fuku $number"
         val fileName = "$cloneName$extension"
         val savedLocation = if (mode == CloneOutputMode.INSTALL) {
             installApks(clonePackage, signedApks)
