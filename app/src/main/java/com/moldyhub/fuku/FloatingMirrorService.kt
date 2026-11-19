@@ -150,7 +150,7 @@ class FloatingMirrorService : Service() {
         root.addView(preview)
         val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else WindowManager.LayoutParams.TYPE_PHONE
-        windowParams = WindowManager.LayoutParams(
+        val params = WindowManager.LayoutParams(
             width, height, type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
@@ -159,6 +159,7 @@ class FloatingMirrorService : Service() {
             x = (20 * density).toInt()
             y = (80 * density).toInt()
         }
+        windowParams = params
         title.setOnTouchListener(object : View.OnTouchListener {
             private var startX = 0
             private var startY = 0
@@ -185,7 +186,7 @@ class FloatingMirrorService : Service() {
             }
         })
         overlay = root
-        runCatching { wm.addView(root, windowParams) }.onFailure { stopSelf() }
+        runCatching { wm.addView(root, params) }.onFailure { stopSelf() }
     }
 
     private fun renderLatestFrame(reader: ImageReader) {
