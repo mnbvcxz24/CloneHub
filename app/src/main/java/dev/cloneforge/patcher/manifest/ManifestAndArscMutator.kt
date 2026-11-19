@@ -56,7 +56,6 @@ class ManifestAndArscMutator {
         private const val ATTR_AUTHORITIES = 0x01010018
         private const val ATTR_META_VALUE = 0x01010024
         private const val ATTR_EXPORTED = 0x01010010
-        private const val ATTR_INIT_ORDER = 0x0101001a
         private const val ATTR_TARGET_ACTIVITY = 0x01010202
         private const val ATTR_APP_COMPONENT_FACTORY = 0x0101057a
         private const val ATTR_EXTRACT_NATIVE_LIBS = 0x010104ea
@@ -175,7 +174,7 @@ class ManifestAndArscMutator {
         val rawOrigAppClass = appNameAttr?.getValueAsString()
         val expandedOrigAppClass = rawOrigAppClass?.let { expandClassName(origPkg, it) }
 
-        // Preserve the original Application and AppComponentFactory; no runtime is injected.
+        // Preserve the source Application and AppComponentFactory; the clone launcher shim is a separate Activity.
         val factoryAttr = appElement.searchAttributeByResourceId(ATTR_APP_COMPONENT_FACTORY)
         val rawOrigFactory = factoryAttr?.getValueAsString()
         val expandedOrigFactory = rawOrigFactory?.let { expandClassName(origPkg, it) }
@@ -237,8 +236,6 @@ class ManifestAndArscMutator {
             mutateProcessAndAffinity(comp, origPkg, clonePkg)
             mutateComponentPermissions(comp, origPkg, cloneSuffix, permissionMap)
         }
-
-        // No injected runtime metadata is added.
 
         // 8. Patch labels and apply the first-stage floating-window experiment.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
