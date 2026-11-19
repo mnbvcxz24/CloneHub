@@ -46,7 +46,7 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView description = new TextView(this);
-        description.setText("Fuku will request a native floating window for this cloned app. Android decides whether freeform windows are available on this device.");
+        description.setText("This cloned app requests its own Android freeform window when you open it. The floating launch happens here inside the clone, not from the Fuku cloner.");
         description.setTextColor(0xFFCDD3DF);
         description.setTextSize(15);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
@@ -54,14 +54,14 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(description, descriptionParams);
 
         Button launchButton = new Button(this);
-        launchButton.setText("Launch clone");
+        launchButton.setText("Open cloned app in floating window");
         LinearLayout.LayoutParams launchParams = new LinearLayout.LayoutParams(-1, -2);
         launchParams.topMargin = dp(18);
         root.addView(launchButton, launchParams);
         launchButton.setOnClickListener(v -> launchOriginalApp());
 
         TextView note = new TextView(this);
-        note.setText("If native freeform is enabled by your Android version or device manufacturer, the cloned app can open in a movable, resizable window. Otherwise Android opens it normally.");
+        note.setText("If your Android device supports freeform windows, the cloned app opens in a movable, resizable window. If the device blocks freeform mode, Android will open it fullscreen instead.");
         note.setTextColor(0xFFFFD18A);
         note.setTextSize(12);
         LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
@@ -93,8 +93,8 @@ public final class RuntimeEntryActivity extends Activity {
             ActivityOptions options = ActivityOptions.makeBasic();
             if (Build.VERSION.SDK_INT >= 24) {
                 android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-                int width = Math.max(dp(280), Math.round(metrics.widthPixels * 0.72f));
-                int height = Math.max(dp(240), Math.round(metrics.heightPixels * 0.72f));
+                int width = Math.min(metrics.widthPixels, Math.max(dp(280), Math.round(metrics.widthPixels * 0.72f)));
+                int height = Math.min(metrics.heightPixels, Math.max(dp(240), Math.round(metrics.heightPixels * 0.72f)));
                 int left = Math.max(0, (metrics.widthPixels - width) / 2);
                 int top = Math.max(0, (metrics.heightPixels - height) / 3);
                 options.setLaunchBounds(new Rect(left, top, left + width, top + height));
