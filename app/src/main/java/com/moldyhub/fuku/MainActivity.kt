@@ -131,6 +131,8 @@ class MainActivity : ComponentActivity() {
         installedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
             .asSequence()
             .filter { it.packageName != packageName }
+            // Do not offer Fuku-generated clones as fresh source apps.
+            .filterNot { it.packageName.matches(Regex(".*\\.fuku\\.c\\d{3}$")) }
             .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
             .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
             .map { info ->
@@ -218,7 +220,7 @@ class MainActivity : ComponentActivity() {
             val result = runCatching {
                 val outcome = CloneApkBuilder(this).build(workspace.directory, workspace.packageName, workspace.appLabel, mode)
                 File(workspace.directory).deleteRecursively()
-                if (mode == CloneOutputMode.INSTALL) "Install request sent for ${outcome.packageName}. Confirm in Android's installer if prompted."
+                if (mode == CloneOutputMode.INSTALL) "Install/update request sent for ${outcome.packageName}. Confirm in Android's installer if prompted."
                 else "Saved successfully: ${outcome.fileName}\nLocation: ${outcome.savedLocation}"
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
