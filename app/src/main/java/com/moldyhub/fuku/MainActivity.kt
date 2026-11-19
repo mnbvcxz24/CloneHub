@@ -9,6 +9,9 @@ import android.provider.Settings
 import android.os.Build
 import android.widget.Toast
 import android.os.Bundle
+import android.app.Activity
+import android.media.projection.MediaProjectionManager
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -73,7 +76,7 @@ private data class PreparedWorkspace(
     val filesValid: Boolean
 )
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity() {\n    companion object { private const val SCREEN_MIRROR_REQUEST = 7401 }
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
 
@@ -99,9 +102,34 @@ class MainActivity : ComponentActivity() {
                         onClone = ::cloneWorkspace,
                         onCloneApp = ::cloneApp,
                         onImportApk = ::importApk,
+                        onStartScreenMirror = ::requestScreenMirror,
                     )
                 }
             }
+        }
+    }
+
+    private fun requestScreenMirror() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Allow Fuku to display over other apps, then tap Start Floating Mirror again.", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            return
+        }
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        @Suppress("DEPRECATION")
+        startActivityForResult(manager.createScreenCaptureIntent(), SCREEN_MIRROR_REQUEST)
+    }
+
+    @Deprecated("Deprecated by Android; retained for compatibility with the activity result flow.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SCREEN_MIRROR_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
+            val serviceIntent = Intent(this, FloatingMirrorService::class.java).apply {
+                putExtra(FloatingMirrorService.EXTRA_RESULT_CODE, resultCode)
+                putExtra(FloatingMirrorService.EXTRA_RESULT_DATA, data)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
+            else startService(serviceIntent)
         }
     }
 
