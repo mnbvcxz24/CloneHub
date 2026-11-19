@@ -18,16 +18,11 @@ Clones are separate installed packages with their own Android app data. The orig
 
 Use only apps and APKs you are authorized to modify. Fuku does not bypass app protections or platform security checks.
 
-## Picture-in-Picture
+## Floating windows
 
-Fuku injects a small runtime into each generated clone. The clone is a standalone installed app and does not need Fuku running after installation.
+Fuku requests a native Android freeform launch window for each installed clone by setting initial launch bounds and marking the cloned Activities as resizable. The cloned app itself runs as a normal installed Activity; Fuku does not capture, mirror, or re-render its screen.
 
-- Clones advertise Android Picture-in-Picture support in their manifests.
-- On Android 12 and newer, the injected runtime prepares native Android PiP auto-entry when the user leaves the app, subject to Android version, device behavior, and source-app compatibility.
-- No custom Fuku overlay window, VirtualDisplay, overlay permission, foreground overlay service, root access, or `su` command is used.
-- PiP is not guaranteed for every source app. Some apps may not support PiP correctly, and Android or the source app can prevent entry.
-
-The PiP runtime does not replace the source app's Application class. It registers activity lifecycle callbacks through an injected ContentProvider.
+Freeform availability is controlled by Android and the device manufacturer. Some phones expose only split-screen or fullscreen and may ignore requested launch bounds. Fuku does not use PiP, MediaProjection, overlay windows, root access, or Shizuku for this launch path.
 
 ## Build
 
