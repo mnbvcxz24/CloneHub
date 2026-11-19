@@ -99,7 +99,6 @@ class MainActivity : ComponentActivity() {
                         onClone = ::cloneWorkspace,
                         onCloneApp = ::cloneApp,
                         onImportApk = ::importApk,
-                        onStartFloating = ::startFukuFloatingLauncher,
                     )
                 }
             }
@@ -110,10 +109,6 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         refreshApps()
         refreshWorkspaces()
-    }
-
-    private fun startFukuFloatingLauncher() {
-        startFukuFloatingLauncher(this)
     }
 
     private fun cloneApp(app: InstalledApp, mode: CloneOutputMode, onComplete: (String) -> Unit) {
@@ -381,7 +376,6 @@ private fun FukuHome(
     onClone: (PreparedWorkspace, CloneOutputMode, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
     onImportApk: (Uri, (String) -> Unit) -> Unit,
-    onStartFloating: () -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -409,9 +403,6 @@ private fun FukuHome(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Fuku Cloner", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Button(onClick = onStartFloating, modifier = Modifier.fillMaxWidth()) {
-            Text("Start floating launcher")
-        }
         Text(
             "Select an installed app, create a clone, and save the signed output.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
