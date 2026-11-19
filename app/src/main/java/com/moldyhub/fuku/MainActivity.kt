@@ -405,6 +405,7 @@ private fun FukuHome(
     onClone: (PreparedWorkspace, CloneOutputMode, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
     onImportApk: (Uri, (String) -> Unit) -> Unit,
+    onStartScreenMirror: () -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -434,6 +435,17 @@ private fun FukuHome(
         Text("Fuku Cloner", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
             "Select an installed app, create a clone, and save the signed output.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onStartScreenMirror
+        ) {
+            Text("Start Floating Mirror")
+        }
+        Text(
+            "Mirrors the captured display in a movable overlay. Android 14+ may allow selecting one app; Android 10–13 captures the display.",
+            fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Card(
