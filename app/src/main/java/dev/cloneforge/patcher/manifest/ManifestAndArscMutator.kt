@@ -422,12 +422,18 @@ class ManifestAndArscMutator {
      * This is an application-owned overlay controller, not Android Activity embedding.
      */
     private fun patchQuickNoteFloatingRuntime(rootManifest: ResXmlElement, appElement: ResXmlElement) {
-        val permissionExists = CollectionUtil.toList(rootManifest.getElements(TAG_USES_PERMISSION))
-            .any { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == "android.permission.SYSTEM_ALERT_WINDOW" }
-        if (!permissionExists) {
-            rootManifest.newElement(TAG_USES_PERMISSION)
-                .getOrCreateAndroidAttribute("name", ATTR_NAME)
-                .setValueAsString("android.permission.SYSTEM_ALERT_WINDOW")
+        val requiredPermissions = listOf(
+            "android.permission.SYSTEM_ALERT_WINDOW",
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+        )
+        for (permission in requiredPermissions) {
+            val exists = CollectionUtil.toList(rootManifest.getElements(TAG_USES_PERMISSION))
+                .any { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == permission }
+            if (!exists) {
+                rootManifest.newElement(TAG_USES_PERMISSION)
+                    .getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(permission)
+            }
         }
 
         val serviceName = "com.fuku.cloneruntime.FloatingService"
@@ -441,8 +447,16 @@ class ManifestAndArscMutator {
                 getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(false)
                 getOrCreateAndroidAttribute("enabled", 0x0101000e).setValueAsBoolean(true)
                 getOrCreateAndroidAttribute("stopWithTask", 0x0101027f).setValueAsBoolean(false)
+                getOrCreateAndroidAttribute("foregroundServiceType", 0x0101058e).setValueAsString("specialUse")
+                newElement("property").apply {
+                    getOrCreateAndroidAttribute("name", ATTR_NAME)
+                        .setValueAsString("android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE")
+                    getOrCreateAndroidAttribute("value", ATTR_META_VALUE)
+                        .setValueAsString("Displays the user's requested floating controls for this cloned app.")
+                }
             }
         }
+
 
         val launcherComponents = collectComponents(appElement).filter { isLauncherComponent(it) }
         val originalLauncher = launcherComponents.firstOrNull()
