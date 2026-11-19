@@ -5,9 +5,7 @@ import android.app.ActivityOptions;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
-import android.net.Uri;
 import android.os.Build;
-import android.provider.Settings;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.graphics.Rect;
@@ -21,7 +19,6 @@ import android.widget.Toast;
 public final class RuntimeEntryActivity extends Activity {
     private static final String META_LAUNCHER = "com.fuku.cloneruntime.ORIGINAL_LAUNCHER";
     private String launchError;
-    private Button permissionButton;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -31,36 +28,6 @@ public final class RuntimeEntryActivity extends Activity {
             return;
         }
         showSetup();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (permissionButton != null) updatePermissionButton();
-    }
-
-    private boolean hasOverlayPermission() {
-        return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this);
-    }
-
-    private void openOverlaySettings() {
-        if (Build.VERSION.SDK_INT < 23 || hasOverlayPermission()) return;
-        try {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-            startActivity(intent);
-        } catch (Exception error) {
-            Toast.makeText(this, "Could not open overlay permission settings.", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void updatePermissionButton() {
-        if (permissionButton == null) return;
-        boolean granted = hasOverlayPermission();
-        permissionButton.setText(granted
-                ? "Floating controls enabled"
-                : "Optional: enable floating controls");
-        permissionButton.setEnabled(!granted);
     }
 
     private void showSetup() {
@@ -79,20 +46,12 @@ public final class RuntimeEntryActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView description = new TextView(this);
-        description.setText("Fuku will request a resizable launch window. Android decides whether native freeform mode is available on this device. Overlay permission is optional and only enables Fuku's extra floating controls.");
+        description.setText("Fuku will request a native floating window for this cloned app. Android decides whether freeform windows are available on this device.");
         description.setTextColor(0xFFCDD3DF);
         description.setTextSize(15);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
         descriptionParams.topMargin = dp(14);
         root.addView(description, descriptionParams);
-
-        permissionButton = new Button(this);
-        permissionButton.setText("Optional: enable floating controls");
-        LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(-1, -2);
-        permissionParams.topMargin = dp(20);
-        root.addView(permissionButton, permissionParams);
-        permissionButton.setOnClickListener(v -> openOverlaySettings());
-        updatePermissionButton();
 
         Button launchButton = new Button(this);
         launchButton.setText("Launch clone");
@@ -102,7 +61,7 @@ public final class RuntimeEntryActivity extends Activity {
         launchButton.setOnClickListener(v -> launchOriginalApp());
 
         TextView note = new TextView(this);
-        note.setText("If this device supports freeform windows, Android may open the cloned app in the requested bounds. If not, the app launches normally; Fuku's overlay controls are available only when overlay permission is granted.");
+        note.setText("If native freeform is enabled by your Android version or device manufacturer, the cloned app can open in a movable, resizable window. Otherwise Android opens it normally.");
         note.setTextColor(0xFFFFD18A);
         note.setTextSize(12);
         LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
