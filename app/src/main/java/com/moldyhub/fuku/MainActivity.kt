@@ -76,7 +76,8 @@ private data class PreparedWorkspace(
     val filesValid: Boolean
 )
 
-class MainActivity : ComponentActivity() {\n    companion object { private const val SCREEN_MIRROR_REQUEST = 7401 }
+class MainActivity : ComponentActivity() {
+    companion object { private const val SCREEN_MIRROR_REQUEST = 7401 }
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
 
