@@ -466,6 +466,25 @@ class ManifestAndArscMutator {
             .setValueAsString(originalLauncher)
 
         launcherComponents.forEach { component ->
+            // Keep the original activity available for explicit same-package launches,
+            // but remove its launcher-discovery signature. Merely setting exported=false
+            // is not sufficient on every OEM launcher and can leave a second icon.
+            for (intentFilter in CollectionUtil.toList(component.getElements("intent-filter"))) {
+                for (action in CollectionUtil.toList(intentFilter.getElements("action"))) {
+                    val name = action.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
+                    if (name == "android.intent.action.MAIN") {
+                        action.searchAttributeByResourceId(ATTR_NAME)
+                            ?.setValueAsString("com.fuku.internal.action.ORIGINAL_MAIN")
+                    }
+                }
+                for (category in CollectionUtil.toList(intentFilter.getElements("category"))) {
+                    val name = category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
+                    if (name == "android.intent.category.LAUNCHER") {
+                        category.searchAttributeByResourceId(ATTR_NAME)
+                            ?.setValueAsString("com.fuku.internal.category.ORIGINAL_LAUNCHER")
+                    }
+                }
+            }
             component.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
                 .setValueAsBoolean(false)
         }
