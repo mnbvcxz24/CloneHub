@@ -22,7 +22,8 @@ data class MutationResult(
     val originalAppComponentFactory: String?,
     val authorityMap: Map<String, String>,
     val permissionMap: Map<String, String>,
-    val accountTypeMap: Map<String, String> = emptyMap()
+    val accountTypeMap: Map<String, String> = emptyMap(),
+    val originalLauncherActivity: String? = null
 )
 
 /**
@@ -66,6 +67,7 @@ class ManifestAndArscMutator {
         private const val ATTR_RESIZEABLE_ACTIVITY = 0x010104f6
 
         private const val TAG_APPLICATION = "application"
+        private const val FREEFORM_TRAMPOLINE_CLASS = "com.moldyhub.fuku.runtime.FreeformTrampolineActivity"
         private const val TAG_PROVIDER = "provider"
         private const val TAG_PERMISSION = "permission"
         private const val TAG_PERMISSION_GROUP = "permission-group"
@@ -180,6 +182,7 @@ class ManifestAndArscMutator {
         mutateComponentPermissions(appElement, origPkg, cloneSuffix, permissionMap)
 
         // 6. Traverse all component elements inside <application>.
+        var originalLauncherActivity: String? = null
         for (comp in collectComponents(appElement)) {
             ensureExplicitExportedForIntentFilters(comp)
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
@@ -201,7 +204,22 @@ class ManifestAndArscMutator {
             val compNameAttr = comp.searchAttributeByResourceId(ATTR_NAME)
             val compName = compNameAttr?.getValueAsString()
             if (!compName.isNullOrBlank()) {
-                compNameAttr.setValueAsString(expandClassName(origPkg, compName))
+                val expandedName = expandClassName(origPkg, compName)
+                if (isLauncherComponent(comp)) {
+                    if (!comp.equalsName("activity")) {
+                        throw IOException(
+                            "Automatic freeform launch currently requires a direct launcher <activity>; " +
+                                "this app uses an activity-alias launcher and was not modified."
+                        )
+                    }
+                    if (originalLauncherActivity != null && originalLauncherActivity != expandedName) {
+                        throw IOException("Multiple launcher activities were found; automatic freeform routing is ambiguous.")
+                    }
+                    originalLauncherActivity = expandedName
+                    compNameAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
+                } else {
+                    compNameAttr.setValueAsString(expandedName)
+                }
             }
 
             // Expand android:targetActivity on <activity-alias>.
@@ -235,6 +253,9 @@ class ManifestAndArscMutator {
         }
 
         // 8. Patch application and launcher labels.
+        if (originalLauncherActivity == null) {
+            throw IOException("No direct MAIN/LAUNCHER activity was found; automatic freeform launch cannot be installed.")
+        }
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
 
         // 9. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
@@ -249,7 +270,8 @@ class ManifestAndArscMutator {
             originalAppComponentFactory = expandedOrigFactory,
             authorityMap = authorityMap,
             permissionMap = permissionMap,
-            accountTypeMap = accountTypeMap
+            accountTypeMap = accountTypeMap,
+            originalLauncherActivity = originalLauncherActivity
         )
     }
 
