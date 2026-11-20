@@ -70,11 +70,9 @@ class ManifestAndArscMutator {
         private const val ATTR_THEME = 0x01010000
         private const val ATTR_META_RESOURCE = 0x01010025
         private const val ATTR_META_NAME = 0x01010003
-        private const val ATTR_META_VALUE = 0x01010024
         private const val ATTR_INIT_ORDER = 0x0101001a
         private const val FLOATING_PROVIDER = "com.fuku.floating.FloatingInitProvider"
         private const val ORIGINAL_THEME_META = "com.fuku.floating.ORIGINAL_THEME"
-        private const val MULTI_RESUME_META = "android.allow_multiple_resumed_activities"
 
         private const val TAG_APPLICATION = "application"
         private const val TAG_PROVIDER = "provider"
@@ -110,7 +108,7 @@ class ManifestAndArscMutator {
         cloneSuffix: String, // e.g., "cf001"
         customAppLabel: String,
         forceLandscape: Boolean = false,
-        floatingDialogThemeId: Int
+        floatingDialogThemeId: Int?
     ): MutationResult {
         Log.d(LOG_TAG, "Mutating base APK manifest: $baseApkFile")
         try {
@@ -206,7 +204,7 @@ class ManifestAndArscMutator {
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
-                patchFloatingTheme(comp, originalApplicationThemeId, floatingDialogThemeId)
+                floatingDialogThemeId?.let { patchFloatingTheme(comp, originalApplicationThemeId, it) }
             }
             if (forceLandscape && comp.equalsName("activity")) {
                 comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
@@ -262,8 +260,7 @@ class ManifestAndArscMutator {
         }
 
         // Register the clone-owned window runtime before the app's first Activity starts.
-        addFloatingBootstrapProvider(appElement, clonePkg)
-        setApplicationMetadataBoolean(appElement, MULTI_RESUME_META, true)
+        if (floatingDialogThemeId != null) addFloatingBootstrapProvider(appElement, clonePkg)
 
         // 8. Patch application and original launcher labels.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
@@ -330,7 +327,7 @@ class ManifestAndArscMutator {
                 if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                     comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                         .setValueAsBoolean(true)
-                    patchFloatingTheme(comp, originalApplicationThemeId, floatingDialogThemeId)
+                    floatingDialogThemeId?.let { patchFloatingTheme(comp, originalApplicationThemeId, it) }
                 }
                 if (comp.equalsName(TAG_PROVIDER)) {
                     val authAttr = comp.searchAttributeByResourceId(ATTR_AUTHORITIES)
@@ -407,14 +404,6 @@ class ManifestAndArscMutator {
             setValueType(ValueType.DEC)
             setData(1000)
         }
-    }
-
-    private fun setApplicationMetadataBoolean(appElement: ResXmlElement, name: String, value: Boolean) {
-        val meta = CollectionUtil.toList(appElement.getElements("meta-data"))
-            .firstOrNull { it.searchAttributeByResourceId(ATTR_META_NAME)?.getValueAsString() == name }
-            ?: appElement.newElement("meta-data")
-        meta.getOrCreateAndroidAttribute("name", ATTR_META_NAME).setValueAsString(name)
-        meta.getOrCreateAndroidAttribute("value", ATTR_META_VALUE).setValueAsBoolean(value)
     }
 
     private fun requireManifestElement(manifest: AndroidManifestBlock): ResXmlElement {
