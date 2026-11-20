@@ -1,12 +1,16 @@
 package com.moldyhub.fuku
 
+import android.app.ActivityOptions
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.os.Build
+import android.util.DisplayMetrics
+import android.util.Log
 import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -53,6 +57,7 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.Properties
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 
 enum class CloneOutputMode { INSTALL, EXTRACT }
 
@@ -61,6 +66,12 @@ private data class InstalledApp(
     val packageName: String,
     val icon: Drawable,
     val apkPaths: List<String>
+)
+
+private data class CloneApp(
+    val label: String,
+    val packageName: String,
+    val icon: Drawable
 )
 
 private data class PreparedWorkspace(
@@ -75,6 +86,7 @@ private data class PreparedWorkspace(
 
 class MainActivity : ComponentActivity() {
     private var installedApps by mutableStateOf<List<InstalledApp>>(emptyList())
+    private var clonedApps by mutableStateOf<List<CloneApp>>(emptyList())
     private var preparedWorkspaces by mutableStateOf<List<PreparedWorkspace>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,6 +101,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     FukuHome(
                         apps = installedApps,
+                        clonedApps = clonedApps,
                         workspaces = preparedWorkspaces,
                         onRefresh = {
                             refreshApps()
@@ -98,6 +111,7 @@ class MainActivity : ComponentActivity() {
                         onAnalyze = ::analyzeWorkspace,
                         onClone = ::cloneWorkspace,
                         onCloneApp = ::cloneApp,
+                        onLaunchClone = ::launchClone,
                         onImportApk = ::importApk,
                     )
                 }
@@ -108,6 +122,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshApps()
+        refreshClonedApps()
         refreshWorkspaces()
     }
 
@@ -124,6 +139,23 @@ class MainActivity : ComponentActivity() {
             }
             cloneWorkspace(workspace, mode) { result -> onComplete(prepared + "\n\n" + result) }
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun refreshClonedApps() {
+        clonedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            .asSequence()
+            .filter { it.packageName.matches(Regex(".*\\\\.fuku\\\\.c\\\\d{3}$")) }
+            .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
+            .map { info ->
+                CloneApp(
+                    label = packageManager.getApplicationLabel(info).toString(),
+                    packageName = info.packageName,
+                    icon = packageManager.getApplicationIcon(info)
+                )
+            }
+            .sortedBy { it.label.lowercase() }
+            .toList()
     }
 
     @Suppress("DEPRECATION")
@@ -149,6 +181,41 @@ class MainActivity : ComponentActivity() {
             }
             .sortedBy { it.label.lowercase() }
             .toList()
+        refreshClonedApps()
+    }
+
+    private fun launchClone(packageName: String, floating: Boolean) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        if (launchIntent == null) {
+            Toast.makeText(this, "The cloned app is not launchable or is no longer installed.", Toast.LENGTH_LONG).show()
+            refreshClonedApps()
+            return
+        }
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (!floating) {
+            runCatching { startActivity(launchIntent) }
+                .onFailure { Toast.makeText(this, "Could not open cloned app: ${it.message}", Toast.LENGTH_LONG).show() }
+            return
+        }
+        try {
+            HiddenApiBypass.addHiddenApiExemptions("")
+            val options = ActivityOptions.makeBasic()
+            val methodName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) "setLaunchWindowingMode" else "setLaunchStackId"
+            val windowingMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) 5 else 2
+            val method = ActivityOptions::class.java.getDeclaredMethod(methodName, Int::class.javaPrimitiveType)
+            method.isAccessible = true
+            method.invoke(options, windowingMode)
+            val metrics: DisplayMetrics = resources.displayMetrics
+            val width = maxOf(320, (metrics.widthPixels * 0.72f).toInt())
+            val height = maxOf(480, (metrics.heightPixels * 0.72f).toInt())
+            val left = maxOf(0, (metrics.widthPixels - width) / 2)
+            val top = maxOf(0, (metrics.heightPixels - height) / 2)
+            options.setLaunchBounds(Rect(left, top, left + width, top + height))
+            startActivity(launchIntent, options.toBundle())
+        } catch (error: Throwable) {
+            Log.e("FukuFloat", "Freeform launch rejected for $packageName", error)
+            Toast.makeText(this, "Floating launch is not available on this device or was blocked by Android: ${error.message ?: error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun refreshWorkspaces() {
@@ -371,12 +438,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun FukuHome(
     apps: List<InstalledApp>,
+    clonedApps: List<CloneApp>,
     workspaces: List<PreparedWorkspace>,
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
     onClone: (PreparedWorkspace, CloneOutputMode, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
+    onLaunchClone: (String, Boolean) -> Unit,
     onImportApk: (Uri, (String) -> Unit) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
@@ -467,6 +536,37 @@ private fun FukuHome(
                                 color = if (workspace.filesValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                                 fontSize = 12.sp
                             )
+                        }
+                    }
+                }
+            }
+        }
+        Text("Cloned apps", fontWeight = FontWeight.SemiBold)
+        Text("${clonedApps.size} installed clone(s) • Open normally or request a floating window", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (clonedApps.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(0.30f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(clonedApps, key = { it.packageName }) { clone ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            val iconBitmap = remember(clone.packageName) {
+                                clone.icon.toBitmap(width = 96, height = 96).asImageBitmap()
+                            }
+                            Image(bitmap = iconBitmap, contentDescription = "${clone.label} icon", modifier = Modifier.size(38.dp))
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(clone.label, fontWeight = FontWeight.Medium)
+                                Text(clone.packageName, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Button(onClick = { onLaunchClone(clone.packageName, false) }) { Text("Open") }
+                                Button(onClick = { onLaunchClone(clone.packageName, true) }) { Text("Float") }
+                            }
                         }
                     }
                 }
