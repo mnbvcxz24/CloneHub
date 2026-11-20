@@ -526,7 +526,7 @@ private fun FukuHome(
                 }
             }
         }
-        if (BuildConfig.FLAVOR != "lite") Text(
+        Text(
             "Prepared APKs are stored privately. Fuku can now rebuild a separate package and hand it to Android's installer.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -556,24 +556,16 @@ private fun FukuHome(
                     enabled = preparingPackage == null,
                     onClick = {
                         preparingPackage = app.packageName
-                        preparationResult = if (BuildConfig.FLAVOR == "lite") "Preparing, verifying, and building your Fuku clone..." else "Copying APK files and verifying checksums..."
-                        if (BuildConfig.FLAVOR == "lite") {
-                            onCloneApp(app, outputMode) { result ->
-                                preparationResult = result
-                                preparingPackage = null
-                            }
-                        } else {
-                            onPrepare(app) { result ->
-                                preparationResult = result
-                                preparingPackage = null
-                            }
+                        preparationResult = "Copying APK files and verifying checksums..."
+                        onPrepare(app) { result ->
+                            preparationResult = result
+                            preparingPackage = null
                         }
                     }
                 ) {
                     Text(
                         when {
-                            preparingPackage == app.packageName -> if (BuildConfig.FLAVOR == "lite") "Cloning..." else "Preparing..."
-                            BuildConfig.FLAVOR == "lite" -> "Clone now"
+                            preparingPackage == app.packageName -> "Preparing..."
                             else -> "Prepare APKs"
                         }
                     )
