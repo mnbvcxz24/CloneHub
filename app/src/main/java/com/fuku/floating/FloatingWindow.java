@@ -48,6 +48,30 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         app.registerActivityLifecycleCallbacks(new FloatingWindow());
     }
 
+    /**
+     * Restore the app's real theme before the Activity's own onCreate runs.
+     * AppCompat validates its theme during onCreate, so onActivityCreated/Started
+     * are too late. This callback exists from API 29; older devices are not
+     * given the dialog theme during clone building.
+     */
+    @Override public void onActivityPreCreated(Activity activity, Bundle state) {
+        try {
+            android.content.pm.ActivityInfo info = activity.getPackageManager()
+                    .getActivityInfo(activity.getComponentName(),
+                            android.content.pm.PackageManager.GET_META_DATA);
+            Bundle metadata = info.metaData;
+            if (metadata == null) return;
+            int originalTheme = metadata.getInt("com.fuku.floating.ORIGINAL_THEME", 0);
+            if (originalTheme != 0) {
+                activity.setTheme(originalTheme);
+                android.util.Log.d("FukuFloating", "Restored original activity theme: "
+                        + activity.getComponentName().flattenToShortString());
+            }
+        } catch (Throwable error) {
+            android.util.Log.e("FukuFloating", "Could not restore original activity theme", error);
+        }
+    }
+
     @Override public void onActivityStarted(final Activity activity) {
         final View decor = activity.getWindow().getDecorView();
         decor.post(new Runnable() {
@@ -76,8 +100,8 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
 
         Window window = activity.getWindow();
         View contentView = window.findViewById(android.R.id.content);
-        if (!(contentView instanceof FrameLayout)) return;
-        final FrameLayout content = (FrameLayout) contentView;
+        final FrameLayout content = ensureFrameLayout(activity, contentView);
+        if (content == null) return;
         if (content.getTag() != null && content.getTag() instanceof String
                 && "fuku-floating-decorated".equals(content.getTag())) return;
 
@@ -103,7 +127,7 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         params.dimAmount = 0f;
         window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
-        window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        window.setBackgroundDrawable(new ColorDrawable(Color.BLACK));
         window.setAttributes(params);
 
         final int barHeight = Math.round(38 * density);
@@ -233,6 +257,33 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
             INSTALLED.add(activity);
             DECORATIONS.put(activity, bar);
         }
+    }
+
+    private static FrameLayout ensureFrameLayout(Activity activity, View contentView) {
+        if (contentView instanceof FrameLayout) return (FrameLayout) contentView;
+        if (contentView == null) {
+            android.util.Log.w("FukuFloating", "Cannot install floating controls: android.R.id.content is missing");
+            return null;
+        }
+        if (!(contentView.getParent() instanceof ViewGroup)) {
+            android.util.Log.w("FukuFloating", "Cannot wrap android.R.id.content: it has no ViewGroup parent ("
+                    + contentView.getClass().getName() + ")");
+            return null;
+        }
+
+        ViewGroup parent = (ViewGroup) contentView.getParent();
+        int index = parent.indexOfChild(contentView);
+        ViewGroup.LayoutParams oldParams = contentView.getLayoutParams();
+        parent.removeView(contentView);
+        FrameLayout wrapper = new FrameLayout(activity);
+        wrapper.setId(android.R.id.content);
+        if (contentView.getId() == android.R.id.content) contentView.setId(View.NO_ID);
+        parent.addView(wrapper, index, oldParams);
+        wrapper.addView(contentView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        android.util.Log.w("FukuFloating", "Wrapped non-FrameLayout android.R.id.content ("
+                + contentView.getClass().getName() + ") in FrameLayout");
+        return wrapper;
     }
 
     private static TextView button(Context context, String label, float density,
