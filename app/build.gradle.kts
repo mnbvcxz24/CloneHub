@@ -10,8 +10,8 @@ android {
         applicationId = "com.moldyhub.fuku"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.4.4-alpha09"
+        versionCode = 16
+        versionName = "0.4.4-alpha10"
     }
     buildTypes {
         debug { isMinifyEnabled = false }
@@ -33,6 +33,7 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.core.ktx)
     implementation(libs.hiddenapibypass)
+    implementation(libs.dexlib2)
     implementation(libs.arsclib)
     implementation(libs.apksig)
     implementation(libs.bouncycastle.bcpkix)
