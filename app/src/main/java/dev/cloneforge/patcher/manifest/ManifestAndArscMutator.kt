@@ -7,7 +7,6 @@ import com.reandroid.arsc.chunk.xml.AndroidManifestBlock
 import com.reandroid.arsc.chunk.xml.ResXmlAttribute
 import com.reandroid.arsc.chunk.xml.ResXmlDocument
 import com.reandroid.arsc.chunk.xml.ResXmlElement
-import com.reandroid.arsc.value.ValueType
 import com.reandroid.utils.collection.CollectionUtil
 import java.io.File
 import java.io.IOException
@@ -249,18 +248,13 @@ class ManifestAndArscMutator {
         }
 
         // 8. Add the self-contained freeform bootstrap provider to the clone.
-        val freeformProvider = appElement.addElement("provider")
+        val freeformProvider = appElement.newElement("provider")
         freeformProvider.getOrCreateAndroidAttribute("name", ATTR_NAME)
             .setValueAsString("com.moldyhub.fuku.runtime.FreeformInitProvider")
         freeformProvider.getOrCreateAndroidAttribute("authorities", ATTR_AUTHORITIES)
             .setValueAsString("$clonePkg.fuku.freeform.init")
         freeformProvider.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
             .setValueAsBoolean(false)
-        freeformProvider.getOrCreateAndroidAttribute("initOrder", 0x0101001a).apply {
-            setValueType(ValueType.DEC)
-            setData(1000)
-        }
-
         // 9. Patch application and original launcher labels.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
 
