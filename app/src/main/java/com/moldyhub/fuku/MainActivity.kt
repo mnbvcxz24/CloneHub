@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshClonedApps() {
         clonedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
             .asSequence()
-            .filter { it.packageName.matches(Regex(".*\\\\.fuku\\\\.c\\\\d{3}$")) }
+            .filter { it.packageName.matches(Regex(".*\\.fuku\\.c\\d{3}$")) }
             .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
             .map { info ->
                 CloneApp(
@@ -292,7 +292,7 @@ class MainActivity : ComponentActivity() {
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
             }
-            runOnUiThread { refreshWorkspaces(); onComplete(result) }
+            runOnUiThread { refreshApps(); refreshWorkspaces(); onComplete(result) }
         }.start()
     }
 
