@@ -7,8 +7,8 @@ import org.jf.dexlib2.Opcodes
 import org.jf.dexlib2.dexbacked.DexBackedDexFile
 import org.jf.dexlib2.immutable.ImmutableDexFile
 import org.jf.dexlib2.writer.pool.DexPool
+import java.io.BufferedInputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.util.LinkedHashMap
 import java.util.zip.ZipFile
 
@@ -40,7 +40,7 @@ internal class DexPayloadInjector(private val context: Context) {
 
             dexEntries.forEach { entry ->
                 val dex = sourceZip.getInputStream(entry).use {
-                    DexBackedDexFile.fromInputStream(opcodes, it)
+                    DexBackedDexFile.fromInputStream(opcodes, BufferedInputStream(it))
                 }
                 dex.classes.forEach { classDef ->
                     val descriptor = classDef.type
