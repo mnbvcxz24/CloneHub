@@ -56,7 +56,6 @@ class ManifestAndArscMutator {
         private const val ATTR_PROCESS = 0x01010011
         private const val ATTR_TASK_AFFINITY = 0x01010012
         private const val ATTR_LABEL = 0x01010001
-        private const val ATTR_ICON = 0x01010002
         private const val ATTR_AUTHORITIES = 0x01010018
         private const val ATTR_META_VALUE = 0x01010024
         private const val ATTR_EXPORTED = 0x01010010
@@ -248,10 +247,7 @@ class ManifestAndArscMutator {
             throw IOException("No supported MAIN/LAUNCHER activity or activity-alias was found.")
         }
 
-        // 8. Patch application and launcher labels.
-        if (originalLauncherActivity == null) {
-            throw IOException("No MAIN/LAUNCHER activity or activity-alias was found; automatic freeform launch cannot be installed.")
-        }
+        // 8. Patch application and original launcher labels.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
 
         // 9. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
