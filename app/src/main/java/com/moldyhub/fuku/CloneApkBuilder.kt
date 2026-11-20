@@ -387,21 +387,14 @@ class CloneApkBuilder(private val context: Context) {
                     }
                 }
                 val callback = Intent(context, CloneInstallReceiver::class.java).putExtra("packageName", clonePackage)
-                val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-                val pending = if (android.os.Build.VERSION.SDK_INT >= 34) {
-                    // Android 14+ restricts background activity launches. The
-                    // system sends this callback after commit; explicitly allow
-                    // the installer confirmation UI to be launched from it.
-                    val options = android.app.ActivityOptions.makeBasic()
-                        .setPendingIntentCreatorBackgroundActivityStartMode(
-                            android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                        )
-                    PendingIntent.getBroadcast(
-                        context, sessionId, callback, pendingFlags, options.toBundle()
-                    )
-                } else {
-                    PendingIntent.getBroadcast(context, sessionId, callback, pendingFlags)
-                }
+                // PackageInstaller sends this mutable callback with the
+                // confirmation intent when explicit user approval is required.
+                val pending = PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    callback,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                )
                 session.commit(pending.intentSender)
             }
         } catch (error: Throwable) {
