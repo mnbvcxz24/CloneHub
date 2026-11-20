@@ -36,6 +36,7 @@ public final class FreeformTrampolineActivity extends Activity {
         Intent launch = new Intent(getIntent());
         launch.setComponent(new ComponentName(getPackageName(), target.trim()));
         launch.setPackage(null);
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
 
         try {
             HiddenApiBypass.addHiddenApiExemptions("");
