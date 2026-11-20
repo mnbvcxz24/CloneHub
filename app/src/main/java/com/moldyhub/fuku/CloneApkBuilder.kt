@@ -386,23 +386,18 @@ class CloneApkBuilder(private val context: Context) {
                         session.fsync(output)
                     }
                 }
-                // Deliver the install result to an Activity so Android can show
-                // its approval UI without relying on a background receiver launch.
-                val callback = Intent(context, CloneInstallCallbackActivity::class.java)
+                // PackageInstaller sends its status callback with background
+                // activity launches explicitly disallowed. Receive the result in
+                // a BroadcastReceiver instead; while Fuku is visibly open, the
+                // receiver can hand Android's confirmation intent to the user.
+                val callback = Intent(context, CloneInstallReceiver::class.java)
+                    .setPackage(context.packageName)
                     .putExtra("packageName", clonePackage)
-                val callbackOptions = if (android.os.Build.VERSION.SDK_INT >= 34) {
-                    android.app.ActivityOptions.makeBasic().apply {
-                        setPendingIntentCreatorBackgroundActivityStartMode(
-                            android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                        )
-                    }.toBundle()
-                } else null
-                val pending = PendingIntent.getActivity(
+                val pending = PendingIntent.getBroadcast(
                     context,
                     sessionId,
                     callback,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                    callbackOptions
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
                 )
                 session.commit(pending.intentSender)
             }
