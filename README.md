@@ -1,15 +1,10 @@
 # Fuku
 
-Fuku is an Android app-cloning manager with two installable editions:
-
-- **Fuku Lite** — restricted to the installed Roblox app.
-- **Fuku Universal** — lets users select other installed, launchable, non-system apps.
-
-Each edition has a separate Android application ID, so both can be installed side by side.
+Fuku is a single-edition Android app-cloning manager. It creates separately installed clones of supported, launchable user apps. There are no Lite or Universal editions.
 
 ## How it works
 
-1. Select an installed app (Roblox in Lite; other launchable user apps in Universal).
+1. Select an installed app.
 2. Fuku copies the app's base and split APK files into its private workspace and verifies their SHA-256 hashes.
 3. The APK set is inspected, package identity and selected manifest references are rewritten, and the set is re-signed with Fuku's local signing key.
 4. Android Package Installer presents the installation confirmation. The user must approve it.
@@ -20,22 +15,21 @@ Use only apps and APKs you are authorized to modify. Fuku does not bypass app pr
 
 ## Floating windows
 
-Fuku requests a native Android freeform launch window for each installed clone by setting initial launch bounds and marking the cloned Activities as resizable. The cloned app itself runs as a normal installed Activity; Fuku does not capture, mirror, or re-render its screen.
+Floating the actual cloned app is not implemented yet. Setting `resizeableActivity=true` in a cloned manifest only declares multi-window compatibility; it does not force Android to open the app in a floating freeform window.
 
-Freeform availability is controlled by Android and the device manufacturer. Some phones expose only split-screen or fullscreen and may ignore requested launch bounds. Fuku does not use PiP, MediaProjection, overlay windows, root access, or Shizuku for this launch path.
+On non-rooted Android devices, freeform availability and launch behavior are controlled by Android and the device manufacturer. If the device does not expose freeform windows, Fuku cannot force a normal installed app to float just by changing its APK manifest. Fuku currently does not mirror the app, draw a floating controller over it, or claim PiP/freeform support.
 
 ## Build
 
 Requirements: JDK 17 and Android SDK 35.
 
 ```sh
-./gradlew :app:assembleLiteDebug :app:assembleUniversalDebug
+./gradlew :app:assembleDebug
 ```
 
-Outputs:
+Output:
 
-- `app/build/outputs/apk/lite/debug/app-lite-debug.apk`
-- `app/build/outputs/apk/universal/debug/app-universal-debug.apk`
+- `app/build/outputs/apk/debug/app-debug.apk`
 
 ## License
 
