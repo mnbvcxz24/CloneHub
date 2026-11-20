@@ -120,6 +120,9 @@ class CloneApkBuilder(private val context: Context) {
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory)
         require(mutation.mutatedPackage == clonePackage) { "Manifest package mutation did not complete." }
+        val originalLauncherActivity = mutation.originalLauncherActivity
+            ?: error("The source app has no supported launcher activity for automatic freeform launch.")
+        DexPayloadInjector(context).inject(stagedApks.first(), originalLauncherActivity)
 
         val authorities = mutation.authorityMap.toMutableMap()
         val permissions = mutation.permissionMap.toMutableMap()
