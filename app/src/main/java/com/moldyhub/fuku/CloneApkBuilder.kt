@@ -80,34 +80,54 @@ class CloneApkBuilder(private val context: Context) {
             ?: error("Android cannot read the prepared base APK.")
         require(baseInfo.packageName == originalPackage) { "The prepared base APK package ID does not match the workspace." }
 
-        // Keep one stable package ID per source app. Rebuilding the same source
-        // updates its existing clone instead of installing c002, c003, etc.
+        // Allocate a fresh package ID for every clone of this source app.
+        // Never reuse an installed clone's ID: each numbered clone stays installable side by side.
         val cloneIndex = synchronized(cloneIndexLock) {
             val sequenceFile = File(context.filesDir, "clone-indexes.properties")
             val sequences = Properties()
             if (sequenceFile.isFile) FileInputStream(sequenceFile).use { sequences.load(it) }
-            val savedIndex = sequences.getProperty(originalPackage)?.toIntOrNull()
-            val existingIndex = if (savedIndex == null || savedIndex !in 1..MAX_CLONE_INDEX) {
-                (1..MAX_CLONE_INDEX).firstOrNull { index ->
+            val lastAllocated = sequences.getProperty(originalPackage)?.toIntOrNull()
+                ?.coerceIn(0, MAX_CLONE_INDEX) ?: 0
+            var nextIndex = lastAllocated + 1
+
+            // Migrate clones created by older builds before the sequence file existed.
+            if (lastAllocated == 0) {
+                for (index in 1..MAX_CLONE_INDEX) {
                     val candidatePackage = "$originalPackage.fuku.c${index.toString().padStart(3, '0')}"
-                    try {
+                    val installed = try {
                         context.packageManager.getPackageInfo(candidatePackage, 0)
                         true
                     } catch (_: PackageManager.NameNotFoundException) {
                         false
                     }
+                    if (installed) nextIndex = maxOf(nextIndex, index + 1)
                 }
-            } else null
-            val stableIndex = savedIndex?.takeIf { it in 1..MAX_CLONE_INDEX } ?: existingIndex ?: 1
-            sequences.setProperty(originalPackage, stableIndex.toString())
+            }
+
+            while (nextIndex <= MAX_CLONE_INDEX) {
+                val candidatePackage = "$originalPackage.fuku.c${nextIndex.toString().padStart(3, '0')}"
+                val installed = try {
+                    context.packageManager.getPackageInfo(candidatePackage, 0)
+                    true
+                } catch (_: PackageManager.NameNotFoundException) {
+                    false
+                }
+                if (!installed) break
+                nextIndex++
+            }
+            check(nextIndex <= MAX_CLONE_INDEX) {
+                "The maximum of $MAX_CLONE_INDEX clones for this app has been reached."
+            }
+
+            sequences.setProperty(originalPackage, nextIndex.toString())
             val temporary = File(sequenceFile.parentFile, sequenceFile.name + ".tmp")
-            FileOutputStream(temporary).use { sequences.store(it, "Fuku stable clone indexes") }
+            FileOutputStream(temporary).use { sequences.store(it, "Fuku per-source clone indexes") }
             if (sequenceFile.exists() && !sequenceFile.delete()) error("Could not update clone sequence.")
             if (!temporary.renameTo(sequenceFile)) {
                 temporary.copyTo(sequenceFile, overwrite = true)
                 temporary.delete()
             }
-            stableIndex
+            nextIndex
         }
         val clonePackage = "$originalPackage.fuku.c${cloneIndex.toString().padStart(3, '0')}"
         val suffix = "fuku_c${cloneIndex.toString().padStart(3, '0')}"
@@ -143,7 +163,7 @@ class CloneApkBuilder(private val context: Context) {
             origPkg = originalPackage,
             clonePkg = clonePackage,
             cloneSuffix = suffix,
-            customAppLabel = "$appLabel (Fuku)",
+            customAppLabel = "$appLabel Fuku $cloneIndex",
             forceLandscape = false,
             floatingDialogThemeId = dialogThemeId
         ) }
@@ -199,9 +219,9 @@ class CloneApkBuilder(private val context: Context) {
         require(signedApks.all { it.isFile && it.length() > 0L }) { "One or more signed APKs are empty." }
 
         val singleApk = signedApks.size == 1
-        val number = cloneIndex.toString().padStart(3, '0')
+        val number = cloneIndex.toString()
         val extension = if (singleApk) ".apk" else ".zip"
-        val cloneName = "$appLabel - Fuku $number"
+        val cloneName = "$appLabel Fuku $number"
         val fileName = "$cloneName$extension"
         val savedLocation = if (mode == CloneOutputMode.INSTALL) {
             buildStep("Install signed clone APK set") { installApks(clonePackage, signedApks) }
