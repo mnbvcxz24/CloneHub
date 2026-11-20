@@ -316,9 +316,9 @@ class CloneApkBuilder(private val context: Context) {
                             this.method = method
                             extra = when {
                                 source.name == "resources.arsc" ->
-                                    alignedExtra(counted.count, source.name, 4, alignmentNudge)
+                                    alignedExtra(counted.count, source.name, 4, alignmentNudge, cleanExtra.size)
                                 method == ZipEntry.STORED && source.name.endsWith(".so", ignoreCase = true) ->
-                                    alignedExtra(counted.count, source.name, NATIVE_LIBRARY_ALIGNMENT, 0)
+                                    alignedExtra(counted.count, source.name, NATIVE_LIBRARY_ALIGNMENT, 0, cleanExtra.size)
                                 else -> cleanExtra
                             }
                             if (method == ZipEntry.STORED) {
@@ -382,13 +382,19 @@ class CloneApkBuilder(private val context: Context) {
         currentOffset: Long,
         entryName: String,
         alignment: Int,
-        alignmentNudge: Int
+        alignmentNudge: Int,
+        preservedExtraLength: Int
     ): ByteArray {
         require(alignment > 0 && (alignment and (alignment - 1)) == 0) {
             "ZIP alignment must be a positive power of two."
         }
         val nameLength = entryName.toByteArray(Charsets.UTF_8).size
-        val basePadding = ((alignment - ((currentOffset + 30L + nameLength + 4L) % alignment)) % alignment).toInt()
+        require(preservedExtraLength >= 0) { "ZIP preserved extra-field length cannot be negative." }
+        // The local header contains the filename, preserved source extra fields,
+        // and our new 0xD935 field header before the payload. Include every byte
+        // when calculating padding; otherwise timestamps/other extras shift data.
+        val basePadding = ((alignment - ((currentOffset + 30L + nameLength +
+            preservedExtraLength + 4L) % alignment)) % alignment).toInt()
         val paddingLength = (basePadding + alignmentNudge) % alignment
         return byteArrayOf(0x35, 0xD9.toByte(), paddingLength.toByte(), (paddingLength ushr 8).toByte()) +
             ByteArray(paddingLength)
