@@ -68,7 +68,7 @@ internal class DexPayloadInjector(private val context: Context) {
             dexEntries.forEach { entry ->
                 existingDexNames.add(entry.name)
                 val dex = targetZip.getInputStream(entry).use {
-                    DexBackedDexFile.fromInputStream(opcodes, it)
+                    DexBackedDexFile.fromInputStream(opcodes, BufferedInputStream(it))
                 }
                 dex.classes.forEach { existingClasses.add(it.type) }
             }
