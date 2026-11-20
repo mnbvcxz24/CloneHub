@@ -183,12 +183,12 @@ class ManifestAndArscMutator {
 
         // 6. Traverse all component elements inside <application>.
         var originalLauncherActivity: String? = null
+        var aliasLauncherFound = false
         for (comp in collectComponents(appElement)) {
             ensureExplicitExportedForIntentFilters(comp)
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
-
             }
 
             // Roblox clone activities retain the requested landscape orientation.
@@ -200,30 +200,41 @@ class ManifestAndArscMutator {
                     }
             }
 
-            // Expand android:name.
+            // Expand android:name. For an activity-alias, Android launches its
+            // targetActivity, so redirect that target while keeping the alias
+            // name, icon, label, and launcher intent-filter intact.
             val compNameAttr = comp.searchAttributeByResourceId(ATTR_NAME)
             val compName = compNameAttr?.getValueAsString()
             if (!compName.isNullOrBlank()) {
                 val expandedName = expandClassName(origPkg, compName)
                 if (isLauncherComponent(comp)) {
-                    if (!comp.equalsName("activity")) {
-                        throw IOException(
-                            "Automatic freeform launch currently requires a direct launcher <activity>; " +
-                                "this app uses an activity-alias launcher and was not modified."
-                        )
+                    if (originalLauncherActivity != null) {
+                        throw IOException("Multiple launcher components were found; automatic freeform routing is ambiguous.")
                     }
-                    if (originalLauncherActivity != null && originalLauncherActivity != expandedName) {
-                        throw IOException("Multiple launcher activities were found; automatic freeform routing is ambiguous.")
+                    if (comp.equalsName("activity")) {
+                        originalLauncherActivity = expandedName
+                        compNameAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
+                    } else if (comp.equalsName("activity-alias")) {
+                        val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
+                            ?: throw IOException("Launcher activity-alias has no android:targetActivity; automatic freeform launch cannot be installed.")
+                        val rawTarget = targetAttr.getValueAsString()
+                        if (rawTarget.isNullOrBlank()) {
+                            throw IOException("Launcher activity-alias has an empty android:targetActivity; automatic freeform launch cannot be installed.")
+                        }
+                        originalLauncherActivity = expandClassName(origPkg, rawTarget)
+                        targetAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
+                        aliasLauncherFound = true
+                        // Keep the alias component name unchanged apart from package expansion.
+                        compNameAttr.setValueAsString(expandedName)
                     }
-                    originalLauncherActivity = expandedName
-                    compNameAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
                 } else {
                     compNameAttr.setValueAsString(expandedName)
                 }
             }
 
-            // Expand android:targetActivity on <activity-alias>.
-            if (comp.equalsName("activity-alias")) {
+            // Expand android:targetActivity on non-launcher aliases. Launcher
+            // aliases already point to the trampoline above.
+            if (comp.equalsName("activity-alias") && !isLauncherComponent(comp)) {
                 val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
                 val targetVal = targetAttr?.getValueAsString()
                 if (!targetVal.isNullOrBlank()) {
@@ -252,9 +263,20 @@ class ManifestAndArscMutator {
             mutateComponentPermissions(comp, origPkg, cloneSuffix, permissionMap)
         }
 
+        // activity-alias must target a separately declared activity. The direct
+        // launcher path reuses its original activity declaration; the alias path
+        // adds a dedicated trampoline declaration without disturbing the source
+        // target activity or the alias's launcher metadata.
+        if (aliasLauncherFound) {
+            val trampoline = manifest.getOrCreateActivity(FREEFORM_TRAMPOLINE_CLASS, false)
+            trampoline.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(true)
+            trampoline.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
+                .setValueAsBoolean(true)
+        }
+
         // 8. Patch application and launcher labels.
         if (originalLauncherActivity == null) {
-            throw IOException("No direct MAIN/LAUNCHER activity was found; automatic freeform launch cannot be installed.")
+            throw IOException("No MAIN/LAUNCHER activity or activity-alias was found; automatic freeform launch cannot be installed.")
         }
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
 
