@@ -11,6 +11,7 @@ import com.reandroid.arsc.value.ValueType
 import com.reandroid.utils.collection.CollectionUtil
 import java.io.File
 import java.io.IOException
+import android.util.Log
 
 /**
  * Mutation result of the base APK (spec 3.1).
@@ -46,6 +47,7 @@ data class MutationResult(
 class ManifestAndArscMutator {
 
     companion object {
+        private const val LOG_TAG = "FukuClone"
         private const val ATTR_NAME = 0x01010003
         private const val ATTR_PERMISSION = 0x01010006
         private const val ATTR_READ_PERMISSION = 0x01010007
@@ -54,6 +56,7 @@ class ManifestAndArscMutator {
         private const val ATTR_PROCESS = 0x01010011
         private const val ATTR_TASK_AFFINITY = 0x01010012
         private const val ATTR_LABEL = 0x01010001
+        private const val ATTR_ICON = 0x01010002
         private const val ATTR_AUTHORITIES = 0x01010018
         private const val ATTR_META_VALUE = 0x01010024
         private const val ATTR_EXPORTED = 0x01010010
@@ -102,6 +105,8 @@ class ManifestAndArscMutator {
         customAppLabel: String,
         forceLandscape: Boolean = false
     ): MutationResult {
+        Log.d(LOG_TAG, "Mutating base APK manifest: $baseApkFile")
+        try {
         val apkModule = ApkModule.loadApkFile(baseApkFile)
         // Our mutations do not need resource resolution against the Android
         // framework tables; skipping them avoids a heavy one-time load.
@@ -184,13 +189,15 @@ class ManifestAndArscMutator {
         // 6. Traverse all component elements inside <application>.
         var originalLauncherActivity: String? = null
         var aliasLauncherFound = false
+        var directLauncherFound = false
+        val directLauncherFilters = ArrayList<ResXmlElement>()
+        var directLauncherElement: ResXmlElement? = null
         for (comp in collectComponents(appElement)) {
             ensureExplicitExportedForIntentFilters(comp)
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
             }
-
             if (forceLandscape && comp.equalsName("activity")) {
                 comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
                     .apply {
@@ -205,13 +212,21 @@ class ManifestAndArscMutator {
             val expandedName = compName?.takeIf { it.isNotBlank() }?.let { expandClassName(origPkg, it) }
 
             if (launcher && originalLauncherActivity == null) {
-                // Route only the first MAIN/LAUNCHER entry. Apps commonly expose
-                // multiple launcher aliases (profiles, modes, or alternate entry
-                // points); the remaining entries stay functional and are simply
-                // package-expanded instead of causing the entire clone to fail.
                 if (comp.equalsName("activity")) {
+                    // Retain the source activity declaration and all of its attributes.
                     originalLauncherActivity = expandedName
-                    compNameAttr?.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
+                    directLauncherFound = true
+                    directLauncherElement = comp
+                    compNameAttr?.setValueAsString(expandedName)
+                    val filters = CollectionUtil.toList(comp.getElements("intent-filter"))
+                        .filter { isLauncherIntentFilter(it) }
+                    if (filters.isEmpty()) {
+                        throw IOException("Launcher activity was detected but its MAIN/LAUNCHER intent filter could not be collected.")
+                    }
+                    filters.forEach { filter ->
+                        comp.remove(filter)
+                        directLauncherFilters.add(filter)
+                    }
                 } else if (comp.equalsName("activity-alias")) {
                     val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
                         ?: throw IOException("Launcher activity-alias has no android:targetActivity; automatic freeform launch cannot be installed.")
@@ -222,20 +237,14 @@ class ManifestAndArscMutator {
                     originalLauncherActivity = expandClassName(origPkg, rawTarget)
                     targetAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
                     aliasLauncherFound = true
-                    // Alias name and launcher metadata (including its icon) remain intact.
                     compNameAttr?.setValueAsString(expandedName)
                 }
             } else {
-                if (!compName.isNullOrBlank()) {
-                    compNameAttr?.setValueAsString(expandedName)
-                }
-                // Expand every alias target that was not selected for trampoline routing.
+                if (!compName.isNullOrBlank()) compNameAttr?.setValueAsString(expandedName)
                 if (comp.equalsName("activity-alias")) {
                     val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
                     val targetVal = targetAttr?.getValueAsString()
-                    if (!targetVal.isNullOrBlank()) {
-                        targetAttr.setValueAsString(expandClassName(origPkg, targetVal))
-                    }
+                    if (!targetVal.isNullOrBlank()) targetAttr.setValueAsString(expandClassName(origPkg, targetVal))
                 }
             }
 
@@ -254,20 +263,25 @@ class ManifestAndArscMutator {
                     authAttr.setValueAsString(mutatedAuths)
                 }
             }
-
             mutateProcessAndAffinity(comp, origPkg, clonePkg)
             mutateComponentPermissions(comp, origPkg, cloneSuffix, permissionMap)
         }
 
-        // activity-alias must target a separately declared activity. The direct
-        // launcher path reuses its original activity declaration; the alias path
-        // adds a dedicated trampoline declaration without disturbing the source
-        // target activity or the alias's launcher metadata.
-        if (aliasLauncherFound) {
+        // Give the trampoline its own component declaration. For a direct activity
+        // launcher, move only MAIN/LAUNCHER filters; all other filters stay on the
+        // original activity. The activity-alias path continues to target the shim.
+        if (directLauncherFound || aliasLauncherFound) {
             val trampoline = manifest.getOrCreateActivity(FREEFORM_TRAMPOLINE_CLASS, false)
             trampoline.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(true)
             trampoline.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                 .setValueAsBoolean(true)
+            if (directLauncherFound) {
+                val original = directLauncherElement
+                    ?: throw IOException("Original launcher activity reference was lost.")
+                copyAndroidAttribute(original, trampoline, "label", ATTR_LABEL)
+                copyAndroidAttribute(original, trampoline, "icon", ATTR_ICON)
+                directLauncherFilters.forEach { trampoline.add(it) }
+            }
         }
 
         // 8. Patch application and launcher labels.
@@ -291,6 +305,10 @@ class ManifestAndArscMutator {
             accountTypeMap = accountTypeMap,
             originalLauncherActivity = originalLauncherActivity
         )
+        } catch (error: Throwable) {
+            Log.e(LOG_TAG, "Base APK manifest mutation failed: ${baseApkFile.name}", error)
+            throw error
+        }
     }
 
     /**
@@ -307,6 +325,8 @@ class ManifestAndArscMutator {
         permissionMap: MutableMap<String, String> = linkedMapOf(),
         accountTypeMap: MutableMap<String, String> = linkedMapOf(),
     ) {
+        Log.d(LOG_TAG, "Mutating split APK manifest: $splitApkFile")
+        try {
         val splitModule = ApkModule.loadApkFile(splitApkFile)
         splitModule.setLoadDefaultFramework(false)
         val manifest = splitModule.getAndroidManifest()
@@ -348,6 +368,10 @@ class ManifestAndArscMutator {
         mutateResXmlFiles(splitModule, origPkg, cloneSuffix, authorityMap, accountTypeMap)
 
         writeApkSafe(splitModule, splitApkFile)
+        } catch (error: Throwable) {
+            Log.e(LOG_TAG, "Split APK manifest mutation failed: ${splitApkFile.name}", error)
+            throw error
+        }
     }
 
     // --------------------------------------------------------------
@@ -454,24 +478,36 @@ class ManifestAndArscMutator {
     }
 
     private fun isLauncherComponent(element: ResXmlElement): Boolean {
-        for (intentFilter in CollectionUtil.toList(element.getElements("intent-filter"))) {
-            var hasMain = false
-            var hasLauncher = false
-            for (action in CollectionUtil.toList(intentFilter.getElements("action"))) {
-                val name = action.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
-                if (name == "android.intent.action.MAIN") {
-                    hasMain = true
-                }
-            }
-            for (category in CollectionUtil.toList(intentFilter.getElements("category"))) {
-                val name = category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString()
-                if (name == "android.intent.category.LAUNCHER") {
-                    hasLauncher = true
-                }
-            }
-            if (hasMain && hasLauncher) return true
+        return CollectionUtil.toList(element.getElements("intent-filter"))
+            .any { isLauncherIntentFilter(it) }
+    }
+
+    private fun isLauncherIntentFilter(intentFilter: ResXmlElement): Boolean {
+        val hasMain = CollectionUtil.toList(intentFilter.getElements("action")).any { action ->
+            action.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == "android.intent.action.MAIN"
         }
-        return false
+        val hasLauncher = CollectionUtil.toList(intentFilter.getElements("category")).any { category ->
+            category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == "android.intent.category.LAUNCHER"
+        }
+        return hasMain && hasLauncher
+    }
+
+    /** Copies an Android attribute without converting resource references to text. */
+    private fun copyAndroidAttribute(
+        source: ResXmlElement,
+        destination: ResXmlElement,
+        name: String,
+        resourceId: Int
+    ) {
+        val sourceAttribute = source.searchAttributeByResourceId(resourceId) ?: return
+        val targetAttribute = destination.getOrCreateAndroidAttribute(name, resourceId)
+        val valueType = sourceAttribute.getValueType()
+        targetAttribute.setValueType(valueType)
+        if (valueType == ValueType.STRING) {
+            targetAttribute.setValueAsString(sourceAttribute.getValueAsString().orEmpty())
+        } else {
+            targetAttribute.setData(sourceAttribute.getData())
+        }
     }
 
     /**
