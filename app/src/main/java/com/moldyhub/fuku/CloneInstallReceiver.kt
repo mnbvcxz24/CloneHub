@@ -9,7 +9,11 @@ import android.widget.Toast
 class CloneInstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent == null) return
-        when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+        val status = intent.getIntExtra(
+            PackageInstaller.EXTRA_STATUS,
+            PackageInstaller.STATUS_FAILURE
+        )
+        when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirmation = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                 confirmation?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -19,8 +23,28 @@ class CloneInstallReceiver : BroadcastReceiver() {
                 context, "Fuku clone installed successfully.", Toast.LENGTH_LONG
             ).show()
             else -> {
-                val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Unknown install error"
-                Toast.makeText(context, "Clone install failed: $message", Toast.LENGTH_LONG).show()
+                val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                    ?: "No error message provided by Android"
+                val legacyStatus = intent.getIntExtra(
+                    PackageInstaller.EXTRA_LEGACY_STATUS,
+                    Int.MIN_VALUE
+                )
+                val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
+                val details = buildString {
+                    append("Clone install failed. Status: ")
+                    append(status)
+                    if (legacyStatus != Int.MIN_VALUE) {
+                        append(", legacy: ")
+                        append(legacyStatus)
+                    }
+                    if (!packageName.isNullOrBlank()) {
+                        append(", package: ")
+                        append(packageName)
+                    }
+                    append(". ")
+                    append(message)
+                }
+                Toast.makeText(context, details, Toast.LENGTH_LONG).show()
             }
         }
     }
