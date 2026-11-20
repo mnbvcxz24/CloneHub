@@ -15,9 +15,9 @@ Use only apps and APKs you are authorized to modify. Fuku does not bypass app pr
 
 ## Floating windows
 
-Floating the actual cloned app is not implemented yet. Setting `resizeableActivity=true` in a cloned manifest only declares multi-window compatibility; it does not force Android to open the app in a floating freeform window.
+From the selected source-app dialog, **Launch clone floating** finds its installed Fuku clone and requests a centered, smaller launch window using Android's public activity launch-bounds API. This launches the actual cloned app; it does not mirror the app or draw an overlay.
 
-On non-rooted Android devices, freeform availability and launch behavior are controlled by Android and the device manufacturer. If the device does not expose freeform windows, Fuku cannot force a normal installed app to float just by changing its APK manifest. Fuku currently does not mirror the app, draw a floating controller over it, or claim PiP/freeform support.
+This is a best-effort request, not a way to bypass Android's window manager. The device must support and allow freeform windows; otherwise Android may ignore the requested bounds and open the clone full-screen. Fuku reports whether the device advertises freeform-window support. PiP is not injected into arbitrary apps because a PiP manifest flag alone cannot make an app enter PiP; the app's own activity must call the PiP API.
 
 ## Build
 
