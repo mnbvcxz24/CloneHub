@@ -37,19 +37,19 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleLiteDebug :app:assembleUniversalDebug --no-daemon --stacktrace
+      - name: Build Fuku debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
       - name: Run lint
         if: always()
         run: ./gradlew lint --no-daemon || true
 
-      - name: Upload build artifacts
+      - name: Upload Fuku APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: fuku-debug-apks
-          path: app/build/outputs/apk/*/debug/*.apk
+          name: fuku-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
 
       - name: Upload lint reports
