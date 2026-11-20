@@ -10,8 +10,8 @@ android {
         applicationId = "com.moldyhub.fuku"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.4.4-alpha07"
+        versionCode = 14
+        versionName = "0.4.4-alpha08"
     }
     buildTypes {
         debug { isMinifyEnabled = false }
