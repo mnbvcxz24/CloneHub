@@ -34,6 +34,7 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.hiddenapibypass)
     implementation(libs.dexlib2)
+    implementation(libs.guava)
     implementation(libs.arsclib)
     implementation(libs.apksig)
     implementation(libs.bouncycastle.bcpkix)
