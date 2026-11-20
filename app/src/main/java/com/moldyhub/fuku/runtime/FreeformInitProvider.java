@@ -19,17 +19,20 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Clone-owned bootstrap that requests freeform before the first screen is shown. */
 public final class FreeformInitProvider extends ContentProvider {
     private static final String EXTRA_RELAUNCHED =
             "com.moldyhub.fuku.runtime.FREEFORM_RELAUNCHED";
     private static final AtomicBoolean ATTEMPTED = new AtomicBoolean(false);
+    private static final AtomicInteger ACTIVE_ACTIVITIES = new AtomicInteger(0);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private final Application.ActivityLifecycleCallbacks callbacks =
             new Application.ActivityLifecycleCallbacks() {
         @Override public void onActivityCreated(Activity activity, Bundle state) {
+            ACTIVE_ACTIVITIES.incrementAndGet();
             Intent incoming = activity.getIntent();
             if (incoming != null && incoming.getBooleanExtra(EXTRA_RELAUNCHED, false)) {
                 ATTEMPTED.set(true);
@@ -57,7 +60,12 @@ public final class FreeformInitProvider extends ContentProvider {
         @Override public void onActivityPaused(Activity activity) { }
         @Override public void onActivityStopped(Activity activity) { }
         @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) { }
-        @Override public void onActivityDestroyed(Activity activity) { }
+        @Override public void onActivityDestroyed(Activity activity) {
+            if (ACTIVE_ACTIVITIES.decrementAndGet() <= 0) {
+                ACTIVE_ACTIVITIES.set(0);
+                ATTEMPTED.set(false);
+            }
+        }
     };
 
     private ActivityOptions makeFreeformOptions(Activity activity) throws Exception {
