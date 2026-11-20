@@ -123,12 +123,21 @@ class CloneApkBuilder(private val context: Context) {
         }
 
         val mutator = ManifestAndArscMutator()
-        val dialogThemeId = context.resources.getIdentifier(
-            "Theme.Material.Dialog.NoActionBar", "style", "android"
-        ).takeIf { it != 0 } ?: context.resources.getIdentifier(
-            "Theme.Material.Dialog", "style", "android"
-        )
-        require(dialogThemeId != 0) { "This Android version does not expose a Material Dialog theme for floating activities." }
+        // Restoring an activity theme before its onCreate requires
+        // ActivityLifecycleCallbacks.onActivityPreCreated (API 29+).
+        // On API 26-28 that hook does not exist, so leave the app's themes
+        // untouched rather than shipping a clone that can crash AppCompat apps.
+        val floatingEnabled = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+        val dialogThemeId = if (floatingEnabled) {
+            context.resources.getIdentifier(
+                "Theme.Material.Dialog.NoActionBar", "style", "android"
+            ).takeIf { it != 0 } ?: context.resources.getIdentifier(
+                "Theme.Material.Dialog", "style", "android"
+            )
+        } else null
+        if (floatingEnabled) require(dialogThemeId != null && dialogThemeId != 0) {
+            "This Android version does not expose a Material Dialog theme for floating activities."
+        }
         val mutation = buildStep("Mutate base APK manifest and resources") { mutator.mutateBaseApk(
             baseApkFile = stagedApks.first(),
             origPkg = originalPackage,
@@ -144,8 +153,14 @@ class CloneApkBuilder(private val context: Context) {
         require(mutation.originalLauncherActivity != null) {
             "The source app has no supported launcher activity."
         }
-        buildStep("Inject clone-owned floating window runtime") { DexPayloadInjector(context).inject(stagedApks.first()) }
-        Log.d(LOG_TAG, "Injected the clone-owned dialog-window runtime; Fuku does not launch or control the clone window.")
+        if (floatingEnabled) {
+            buildStep("Inject clone-owned floating window runtime") {
+                DexPayloadInjector(context).inject(stagedApks.first())
+            }
+            Log.d(LOG_TAG, "Injected the clone-owned floating-window runtime.")
+        } else {
+            Log.w(LOG_TAG, "Floating windows are disabled below API 29; original app themes are preserved.")
+        }
 
         val authorities = mutation.authorityMap.toMutableMap()
         val permissions = mutation.permissionMap.toMutableMap()
