@@ -70,7 +70,6 @@ class ManifestAndArscMutator {
         private const val ATTR_RESIZEABLE_ACTIVITY = 0x010104f6
 
         private const val TAG_APPLICATION = "application"
-        private const val FREEFORM_TRAMPOLINE_CLASS = "com.moldyhub.fuku.runtime.FreeformTrampolineActivity"
         private const val TAG_PROVIDER = "provider"
         private const val TAG_PERMISSION = "permission"
         private const val TAG_PERMISSION_GROUP = "permission-group"
@@ -188,10 +187,7 @@ class ManifestAndArscMutator {
 
         // 6. Traverse all component elements inside <application>.
         var originalLauncherActivity: String? = null
-        var aliasLauncherFound = false
-        var directLauncherFound = false
-        val directLauncherFilters = ArrayList<ResXmlElement>()
-        var directLauncherElement: ResXmlElement? = null
+        var launcherFound = false
         for (comp in collectComponents(appElement)) {
             ensureExplicitExportedForIntentFilters(comp)
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
@@ -208,44 +204,23 @@ class ManifestAndArscMutator {
 
             val compNameAttr = comp.searchAttributeByResourceId(ATTR_NAME)
             val compName = compNameAttr?.getValueAsString()
-            val launcher = isLauncherComponent(comp)
             val expandedName = compName?.takeIf { it.isNotBlank() }?.let { expandClassName(origPkg, it) }
+            if (!compName.isNullOrBlank()) compNameAttr?.setValueAsString(expandedName)
 
-            if (launcher && originalLauncherActivity == null) {
-                if (comp.equalsName("activity")) {
-                    // Retain the source activity declaration and all of its attributes.
-                    originalLauncherActivity = expandedName
-                    directLauncherFound = true
-                    directLauncherElement = comp
-                    compNameAttr?.setValueAsString(expandedName)
-                    val filters = CollectionUtil.toList(comp.getElements("intent-filter"))
-                        .filter { isLauncherIntentFilter(it) }
-                    if (filters.isEmpty()) {
-                        throw IOException("Launcher activity was detected but its MAIN/LAUNCHER intent filter could not be collected.")
+            if (comp.equalsName("activity-alias")) {
+                val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
+                val targetVal = targetAttr?.getValueAsString()
+                if (!targetVal.isNullOrBlank()) {
+                    val expandedTarget = expandClassName(origPkg, targetVal)
+                    targetAttr.setValueAsString(expandedTarget)
+                    if (isLauncherComponent(comp) && originalLauncherActivity == null) {
+                        originalLauncherActivity = expandedTarget
+                        launcherFound = true
                     }
-                    filters.forEach { filter ->
-                        comp.remove(filter)
-                        directLauncherFilters.add(filter)
-                    }
-                } else if (comp.equalsName("activity-alias")) {
-                    val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
-                        ?: throw IOException("Launcher activity-alias has no android:targetActivity; automatic freeform launch cannot be installed.")
-                    val rawTarget = targetAttr.getValueAsString()
-                    if (rawTarget.isNullOrBlank()) {
-                        throw IOException("Launcher activity-alias has an empty android:targetActivity; automatic freeform launch cannot be installed.")
-                    }
-                    originalLauncherActivity = expandClassName(origPkg, rawTarget)
-                    targetAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
-                    aliasLauncherFound = true
-                    compNameAttr?.setValueAsString(expandedName)
                 }
-            } else {
-                if (!compName.isNullOrBlank()) compNameAttr?.setValueAsString(expandedName)
-                if (comp.equalsName("activity-alias")) {
-                    val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
-                    val targetVal = targetAttr?.getValueAsString()
-                    if (!targetVal.isNullOrBlank()) targetAttr.setValueAsString(expandClassName(origPkg, targetVal))
-                }
+            } else if (comp.equalsName("activity") && isLauncherComponent(comp)) {
+                if (originalLauncherActivity == null) originalLauncherActivity = expandedName
+                launcherFound = true
             }
 
             if (comp.equalsName(TAG_PROVIDER)) {
@@ -267,21 +242,10 @@ class ManifestAndArscMutator {
             mutateComponentPermissions(comp, origPkg, cloneSuffix, permissionMap)
         }
 
-        // Give the trampoline its own component declaration. For a direct activity
-        // launcher, move only MAIN/LAUNCHER filters; all other filters stay on the
-        // original activity. The activity-alias path continues to target the shim.
-        if (directLauncherFound || aliasLauncherFound) {
-            val trampoline = manifest.getOrCreateActivity(FREEFORM_TRAMPOLINE_CLASS, false)
-            trampoline.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(true)
-            trampoline.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
-                .setValueAsBoolean(true)
-            if (directLauncherFound) {
-                val original = directLauncherElement
-                    ?: throw IOException("Original launcher activity reference was lost.")
-                copyAndroidAttribute(original, trampoline, "label", ATTR_LABEL)
-                copyAndroidAttribute(original, trampoline, "icon", ATTR_ICON)
-                directLauncherFilters.forEach { trampoline.add(it) }
-            }
+        // Keep the original MAIN/LAUNCHER activity or activity-alias intact.
+        // Floating-window launch is requested manually by Fuku, not by injected clone code.
+        if (!launcherFound || originalLauncherActivity == null) {
+            throw IOException("No supported MAIN/LAUNCHER activity or activity-alias was found.")
         }
 
         // 8. Patch application and launcher labels.
@@ -490,24 +454,6 @@ class ManifestAndArscMutator {
             category.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == "android.intent.category.LAUNCHER"
         }
         return hasMain && hasLauncher
-    }
-
-    /** Copies an Android attribute without converting resource references to text. */
-    private fun copyAndroidAttribute(
-        source: ResXmlElement,
-        destination: ResXmlElement,
-        name: String,
-        resourceId: Int
-    ) {
-        val sourceAttribute = source.searchAttributeByResourceId(resourceId) ?: return
-        val targetAttribute = destination.getOrCreateAndroidAttribute(name, resourceId)
-        val valueType = sourceAttribute.getValueType()
-        targetAttribute.setValueType(valueType)
-        if (valueType == ValueType.STRING) {
-            targetAttribute.setValueAsString(sourceAttribute.getValueAsString().orEmpty())
-        } else {
-            targetAttribute.setData(sourceAttribute.getData())
-        }
     }
 
     /**
