@@ -191,7 +191,6 @@ class ManifestAndArscMutator {
                     .setValueAsBoolean(true)
             }
 
-            // Roblox clone activities retain the requested landscape orientation.
             if (forceLandscape && comp.equalsName("activity")) {
                 comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
                     .apply {
@@ -200,49 +199,46 @@ class ManifestAndArscMutator {
                     }
             }
 
-            // Expand android:name. For an activity-alias, Android launches its
-            // targetActivity, so redirect that target while keeping the alias
-            // name, icon, label, and launcher intent-filter intact.
             val compNameAttr = comp.searchAttributeByResourceId(ATTR_NAME)
             val compName = compNameAttr?.getValueAsString()
-            if (!compName.isNullOrBlank()) {
-                val expandedName = expandClassName(origPkg, compName)
-                if (isLauncherComponent(comp)) {
-                    if (originalLauncherActivity != null) {
-                        throw IOException("Multiple launcher components were found; automatic freeform routing is ambiguous.")
+            val launcher = isLauncherComponent(comp)
+            val expandedName = compName?.takeIf { it.isNotBlank() }?.let { expandClassName(origPkg, it) }
+
+            if (launcher && originalLauncherActivity == null) {
+                // Route only the first MAIN/LAUNCHER entry. Apps commonly expose
+                // multiple launcher aliases (profiles, modes, or alternate entry
+                // points); the remaining entries stay functional and are simply
+                // package-expanded instead of causing the entire clone to fail.
+                if (comp.equalsName("activity")) {
+                    originalLauncherActivity = expandedName
+                    compNameAttr?.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
+                } else if (comp.equalsName("activity-alias")) {
+                    val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
+                        ?: throw IOException("Launcher activity-alias has no android:targetActivity; automatic freeform launch cannot be installed.")
+                    val rawTarget = targetAttr.getValueAsString()
+                    if (rawTarget.isNullOrBlank()) {
+                        throw IOException("Launcher activity-alias has an empty android:targetActivity; automatic freeform launch cannot be installed.")
                     }
-                    if (comp.equalsName("activity")) {
-                        originalLauncherActivity = expandedName
-                        compNameAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
-                    } else if (comp.equalsName("activity-alias")) {
-                        val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
-                            ?: throw IOException("Launcher activity-alias has no android:targetActivity; automatic freeform launch cannot be installed.")
-                        val rawTarget = targetAttr.getValueAsString()
-                        if (rawTarget.isNullOrBlank()) {
-                            throw IOException("Launcher activity-alias has an empty android:targetActivity; automatic freeform launch cannot be installed.")
-                        }
-                        originalLauncherActivity = expandClassName(origPkg, rawTarget)
-                        targetAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
-                        aliasLauncherFound = true
-                        // Keep the alias component name unchanged apart from package expansion.
-                        compNameAttr.setValueAsString(expandedName)
+                    originalLauncherActivity = expandClassName(origPkg, rawTarget)
+                    targetAttr.setValueAsString(FREEFORM_TRAMPOLINE_CLASS)
+                    aliasLauncherFound = true
+                    // Alias name and launcher metadata (including its icon) remain intact.
+                    compNameAttr?.setValueAsString(expandedName)
+                }
+            } else {
+                if (!compName.isNullOrBlank()) {
+                    compNameAttr?.setValueAsString(expandedName)
+                }
+                // Expand every alias target that was not selected for trampoline routing.
+                if (comp.equalsName("activity-alias")) {
+                    val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
+                    val targetVal = targetAttr?.getValueAsString()
+                    if (!targetVal.isNullOrBlank()) {
+                        targetAttr.setValueAsString(expandClassName(origPkg, targetVal))
                     }
-                } else {
-                    compNameAttr.setValueAsString(expandedName)
                 }
             }
 
-            // Expand android:targetActivity on non-launcher aliases. Launcher
-            // aliases already point to the trampoline above.
-            if (comp.equalsName("activity-alias") && !isLauncherComponent(comp)) {
-                val targetAttr = comp.searchAttributeByResourceId(ATTR_TARGET_ACTIVITY)
-                val targetVal = targetAttr?.getValueAsString()
-                if (!targetVal.isNullOrBlank()) {
-                    targetAttr.setValueAsString(expandClassName(origPkg, targetVal))
-                }
-            }
-
-            // Mutate <provider> authorities and build the authority map.
             if (comp.equalsName(TAG_PROVIDER)) {
                 val authAttr = comp.searchAttributeByResourceId(ATTR_AUTHORITIES)
                 val rawAuths = authAttr?.getValueAsString()
