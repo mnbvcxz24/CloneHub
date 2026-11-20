@@ -301,7 +301,7 @@ class ManifestAndArscMutator {
         permissionMap: MutableMap<String, String> = linkedMapOf(),
         accountTypeMap: MutableMap<String, String> = linkedMapOf(),
         originalApplicationThemeId: Int? = null,
-        floatingDialogThemeId: Int
+        floatingDialogThemeId: Int?
     ) {
         Log.d(LOG_TAG, "Mutating split APK manifest: $splitApkFile")
         try {
