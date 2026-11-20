@@ -42,7 +42,7 @@ data class MutationResult(
 /*
  * Derived from the manifest mutation implementation in CloniX.
  * See THIRD_PARTY_NOTICES.md for attribution and GPL-3.0 details.
- * Fuku injects a self-contained freeform startup provider; no identity hooks are installed.
+ * Fuku excludes runtime payload injection and identity hooks.
  */
 class ManifestAndArscMutator {
 
@@ -176,7 +176,7 @@ class ManifestAndArscMutator {
         val rawOrigAppClass = appNameAttr?.getValueAsString()
         val expandedOrigAppClass = rawOrigAppClass?.let { expandClassName(origPkg, it) }
 
-        // Preserve the source Application and AppComponentFactory; freeform startup is handled by a clone-owned provider.
+        // Preserve the source Application and AppComponentFactory; the clone launcher shim is a separate Activity.
         val factoryAttr = appElement.searchAttributeByResourceId(ATTR_APP_COMPONENT_FACTORY)
         val rawOrigFactory = factoryAttr?.getValueAsString()
         val expandedOrigFactory = rawOrigFactory?.let { expandClassName(origPkg, it) }
@@ -241,25 +241,16 @@ class ManifestAndArscMutator {
             mutateComponentPermissions(comp, origPkg, cloneSuffix, permissionMap)
         }
 
-        // Keep every original launcher component intact. A clone-owned ContentProvider
-        // registers ActivityLifecycleCallbacks before the first screen and requests
-        // freeform for whichever launcher Activity Android actually starts.
+        // Keep the original MAIN/LAUNCHER activity or activity-alias intact.
+        // Floating-window launch is requested manually by Fuku, not by injected clone code.
         if (!launcherFound || originalLauncherActivity == null) {
             throw IOException("No supported MAIN/LAUNCHER activity or activity-alias was found.")
         }
 
-        // 8. Add the self-contained freeform bootstrap provider to the clone.
-        val freeformProvider = appElement.newElement("provider")
-        freeformProvider.getOrCreateAndroidAttribute("name", ATTR_NAME)
-            .setValueAsString("com.moldyhub.fuku.runtime.FreeformInitProvider")
-        freeformProvider.getOrCreateAndroidAttribute("authorities", ATTR_AUTHORITIES)
-            .setValueAsString("$clonePkg.fuku.freeform.init")
-        freeformProvider.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED)
-            .setValueAsBoolean(false)
-        // 9. Patch application and original launcher labels.
+        // 8. Patch application and original launcher labels.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
 
-        // 10. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
+        // 9. Mutate account-authenticator, sync-adapter, and searchable XML resources (spec §8).
         mutateResXmlFiles(apkModule, origPkg, cloneSuffix, authorityMap, accountTypeMap)
 
         writeApkSafe(apkModule, baseApkFile)

@@ -6,10 +6,9 @@ import android.graphics.drawable.Drawable
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import android.util.Log
+import android.os.Build
 import android.widget.Toast
 import android.os.Bundle
-import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -187,12 +186,9 @@ class MainActivity : ComponentActivity() {
             refreshClonedApps()
             return
         }
-        // The clone's injected provider requests freeform automatically. Fuku
-        // only starts the package normally and is not part of the floating runtime.
         runCatching { startActivity(launchIntent) }
             .onFailure { Toast.makeText(this, "Could not open cloned app: ${it.message}", Toast.LENGTH_LONG).show() }
     }
-
     private fun refreshWorkspaces() {
         val root = File(filesDir, "prepared_apks")
         preparedWorkspaces = root.listFiles()
@@ -517,7 +513,7 @@ private fun FukuHome(
             }
         }
         Text("Cloned apps", fontWeight = FontWeight.SemiBold)
-        Text("${clonedApps.size} installed clone(s) • Clones automatically request a floating window when opened", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${clonedApps.size} installed clone(s)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (clonedApps.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(0.30f, fill = false),
@@ -538,9 +534,7 @@ private fun FukuHome(
                                 Text(clone.label, fontWeight = FontWeight.Medium)
                                 Text(clone.packageName, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Button(onClick = { onLaunchClone(clone.packageName) }) { Text("Open") }
-                            }
+                            Button(onClick = { onLaunchClone(clone.packageName) }) { Text("Open") }
                         }
                     }
                 }

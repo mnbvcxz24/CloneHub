@@ -137,11 +137,7 @@ class CloneApkBuilder(private val context: Context) {
         require(mutation.originalLauncherActivity != null) {
             "The source app has no supported launcher activity."
         }
-        // Package the freeform bootstrap into the clone itself. It registers before
-        // the first Activity and relaunches that Activity with freeform options.
-        buildStep("Inject clone-owned automatic freeform runtime") {
-            DexPayloadInjector(context).inject(stagedApks.first())
-        }
+        Log.d(LOG_TAG, "Keeping the original launcher component; no runtime DEX payload will be injected.")
 
         val authorities = mutation.authorityMap.toMutableMap()
         val permissions = mutation.permissionMap.toMutableMap()
