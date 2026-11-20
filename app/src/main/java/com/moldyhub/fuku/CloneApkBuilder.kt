@@ -369,6 +369,13 @@ class CloneApkBuilder(private val context: Context) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(clonePackage)
+            // Fuku is an ordinary, non-privileged installer. Explicitly require
+            // Android's confirmation UI instead of relying on OEM-specific
+            // handling of USER_ACTION_UNSPECIFIED (which can abort with
+            // "User rejected permissions" without a clear approval flow).
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+            }
         }
         val sessionId = installer.createSession(params)
         try {
