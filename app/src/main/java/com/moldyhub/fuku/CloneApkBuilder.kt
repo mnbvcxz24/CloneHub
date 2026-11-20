@@ -148,7 +148,6 @@ class CloneApkBuilder(private val context: Context) {
             normalizeSignAndVerifyApk(
                 input,
                 output,
-                if (index == 0) loadCloneRuntimeDex() else null,
                 signer.first,
                 signer.second
             )
@@ -172,12 +171,6 @@ class CloneApkBuilder(private val context: Context) {
         return CloneBuildOutcome(clonePackage, cloneName, savedLocation)
     }
 
-    private fun loadCloneRuntimeDex(): ByteArray {
-        return context.assets.open("clone-runtime.dex").use { it.readBytes() }.also {
-            require(it.isNotEmpty()) { "The clone runtime DEX is empty." }
-        }
-    }
-
     /**
      * Rewrites, signs, and validates each padding variant. The signed APK is
      * authoritative: the variant is accepted only when its resources.arsc
@@ -186,15 +179,12 @@ class CloneApkBuilder(private val context: Context) {
     private fun normalizeSignAndVerifyApk(
         apkFile: File,
         outputFile: File,
-        runtimeDex: ByteArray?,
         key: PrivateKey,
         certificate: X509Certificate
     ) {
-        var pendingDex = runtimeDex
         var lastAlignmentError: IllegalArgumentException? = null
         for (nudge in 0..3) {
-            rewriteApkForAndroidInstall(apkFile, pendingDex, nudge)
-            pendingDex = null
+            rewriteApkForAndroidInstall(apkFile, nudge)
 
             val normalizedInfo = resourcesArscInfo(apkFile)
             if (normalizedInfo != null) {
@@ -286,27 +276,7 @@ class CloneApkBuilder(private val context: Context) {
         return a or (b shl 16)
     }
 
-    private fun rewriteApkForAndroidInstall(apkFile: File, runtimeDex: ByteArray?, alignmentNudge: Int) {
-        val existingDexNames = linkedSetOf<String>()
-        java.util.zip.ZipFile(apkFile).use { zip ->
-            val entries = zip.entries()
-            while (entries.hasMoreElements()) {
-                val name = entries.nextElement().name
-                if (name.matches(Regex("classes(\\d*)\\.dex"))) existingDexNames.add(name)
-            }
-        }
-
-        var runtimeDexName: String? = null
-        if (runtimeDex != null) {
-            var index = 2
-            var candidate = "classes${index}.dex"
-            while (candidate in existingDexNames) {
-                index++
-                candidate = "classes${index}.dex"
-            }
-            runtimeDexName = candidate
-        }
-
+    private fun rewriteApkForAndroidInstall(apkFile: File, alignmentNudge: Int) {
         val temporary = File(apkFile.parentFile, apkFile.name + ".aligned.tmp")
         try {
             java.util.zip.ZipFile(apkFile).use { input ->
@@ -347,11 +317,6 @@ class CloneApkBuilder(private val context: Context) {
                         output.closeEntry()
                     }
 
-                    if (runtimeDexName != null && runtimeDex != null) {
-                        output.putNextEntry(ZipEntry(runtimeDexName))
-                        output.write(runtimeDex)
-                        output.closeEntry()
-                    }
                 }
             }
 
