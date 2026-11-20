@@ -386,14 +386,23 @@ class CloneApkBuilder(private val context: Context) {
                         session.fsync(output)
                     }
                 }
-                val callback = Intent(context, CloneInstallReceiver::class.java).putExtra("packageName", clonePackage)
-                // PackageInstaller sends this mutable callback with the
-                // confirmation intent when explicit user approval is required.
-                val pending = PendingIntent.getBroadcast(
+                // Deliver the install result to an Activity so Android can show
+                // its approval UI without relying on a background receiver launch.
+                val callback = Intent(context, CloneInstallCallbackActivity::class.java)
+                    .putExtra("packageName", clonePackage)
+                val callbackOptions = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                    android.app.ActivityOptions.makeBasic().apply {
+                        setPendingIntentCreatorBackgroundActivityStartMode(
+                            android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                        )
+                    }.toBundle()
+                } else null
+                val pending = PendingIntent.getActivity(
                     context,
                     sessionId,
                     callback,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                    callbackOptions
                 )
                 session.commit(pending.intentSender)
             }
