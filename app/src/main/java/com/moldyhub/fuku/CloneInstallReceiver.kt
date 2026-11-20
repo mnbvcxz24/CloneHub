@@ -25,18 +25,10 @@ class CloneInstallReceiver : BroadcastReceiver() {
             else -> {
                 val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                     ?: "No error message provided by Android"
-                val legacyStatus = intent.getIntExtra(
-                    PackageInstaller.EXTRA_LEGACY_STATUS,
-                    Int.MIN_VALUE
-                )
                 val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
                 val details = buildString {
                     append("Clone install failed. Status: ")
                     append(status)
-                    if (legacyStatus != Int.MIN_VALUE) {
-                        append(", legacy: ")
-                        append(legacyStatus)
-                    }
                     if (!packageName.isNullOrBlank()) {
                         append(", package: ")
                         append(packageName)
