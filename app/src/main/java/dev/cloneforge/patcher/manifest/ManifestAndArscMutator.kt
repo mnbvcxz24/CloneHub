@@ -24,7 +24,8 @@ data class MutationResult(
     val authorityMap: Map<String, String>,
     val permissionMap: Map<String, String>,
     val accountTypeMap: Map<String, String> = emptyMap(),
-    val originalLauncherActivity: String? = null
+    val originalLauncherActivity: String? = null,
+    val originalApplicationThemeId: Int? = null
 )
 
 /**
@@ -67,6 +68,14 @@ class ManifestAndArscMutator {
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
         private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
         private const val ATTR_RESIZEABLE_ACTIVITY = 0x010104f6
+        private const val ATTR_THEME = 0x01010000
+        private const val ATTR_META_RESOURCE = 0x01010025
+        private const val ATTR_META_NAME = 0x01010003
+        private const val ATTR_META_VALUE = 0x01010024
+        private const val ATTR_INIT_ORDER = 0x0101001a
+        private const val FLOATING_PROVIDER = "com.fuku.floating.FloatingInitProvider"
+        private const val ORIGINAL_THEME_META = "com.fuku.floating.ORIGINAL_THEME"
+        private const val MULTI_RESUME_META = "android.allow_multiple_resumed_activities"
 
         private const val TAG_APPLICATION = "application"
         private const val TAG_PROVIDER = "provider"
@@ -101,7 +110,8 @@ class ManifestAndArscMutator {
         clonePkg: String,
         cloneSuffix: String, // e.g., "cf001"
         customAppLabel: String,
-        forceLandscape: Boolean = false
+        forceLandscape: Boolean = false,
+        floatingDialogThemeId: Int
     ): MutationResult {
         Log.d(LOG_TAG, "Mutating base APK manifest: $baseApkFile")
         try {
@@ -171,6 +181,11 @@ class ManifestAndArscMutator {
         // (e.g. Telegram, Forkgram), forcing extractNativeLibs=false causes Android PackageInstaller
         // to fail with INSTALL_FAILED_INVALID_APK: Failed to extract native libraries, res=-2.
 
+        val originalApplicationThemeId = appElement.searchAttributeByResourceId(ATTR_THEME)
+            ?.takeIf { it.getValueType().isReference() }
+            ?.getData()
+            ?.takeIf { it != 0 }
+
         // Capture & replace application@android:name.
         val appNameAttr = appElement.searchAttributeByResourceId(ATTR_NAME)
         val rawOrigAppClass = appNameAttr?.getValueAsString()
@@ -192,6 +207,7 @@ class ManifestAndArscMutator {
             if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
+                patchFloatingTheme(comp, originalApplicationThemeId, floatingDialogThemeId)
             }
             if (forceLandscape && comp.equalsName("activity")) {
                 comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
@@ -242,10 +258,13 @@ class ManifestAndArscMutator {
         }
 
         // Keep the original MAIN/LAUNCHER activity or activity-alias intact.
-        // Floating-window launch is requested manually by Fuku, not by injected clone code.
         if (!launcherFound || originalLauncherActivity == null) {
             throw IOException("No supported MAIN/LAUNCHER activity or activity-alias was found.")
         }
+
+        // Register the clone-owned window runtime before the app's first Activity starts.
+        addFloatingBootstrapProvider(appElement, clonePkg)
+        setApplicationMetadataBoolean(appElement, MULTI_RESUME_META, true)
 
         // 8. Patch application and original launcher labels.
         patchApplicationAndLauncherLabels(appElement, customAppLabel)
@@ -263,7 +282,8 @@ class ManifestAndArscMutator {
             authorityMap = authorityMap,
             permissionMap = permissionMap,
             accountTypeMap = accountTypeMap,
-            originalLauncherActivity = originalLauncherActivity
+            originalLauncherActivity = originalLauncherActivity,
+            originalApplicationThemeId = originalApplicationThemeId
         )
         } catch (error: Throwable) {
             Log.e(LOG_TAG, "Base APK manifest mutation failed: ${baseApkFile.name}", error)
@@ -284,6 +304,8 @@ class ManifestAndArscMutator {
         authorityMap: MutableMap<String, String> = linkedMapOf(),
         permissionMap: MutableMap<String, String> = linkedMapOf(),
         accountTypeMap: MutableMap<String, String> = linkedMapOf(),
+        originalApplicationThemeId: Int? = null,
+        floatingDialogThemeId: Int
     ) {
         Log.d(LOG_TAG, "Mutating split APK manifest: $splitApkFile")
         try {
@@ -305,6 +327,11 @@ class ManifestAndArscMutator {
                 val compName = nameAttr?.getValueAsString()
                 if (!compName.isNullOrBlank()) {
                     nameAttr.setValueAsString(expandClassName(origPkg, compName))
+                }
+                if (comp.equalsName("activity") || comp.equalsName("activity-alias")) {
+                    comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
+                        .setValueAsBoolean(true)
+                    patchFloatingTheme(comp, originalApplicationThemeId, floatingDialogThemeId)
                 }
                 if (comp.equalsName(TAG_PROVIDER)) {
                     val authAttr = comp.searchAttributeByResourceId(ATTR_AUTHORITIES)
@@ -337,6 +364,59 @@ class ManifestAndArscMutator {
     // --------------------------------------------------------------
     // Helpers
     // --------------------------------------------------------------
+
+
+    private fun patchFloatingTheme(
+        component: ResXmlElement,
+        applicationThemeId: Int?,
+        floatingDialogThemeId: Int
+    ) {
+        val existingTheme = component.searchAttributeByResourceId(ATTR_THEME)
+        val originalThemeId = existingTheme
+            ?.takeIf { it.getValueType().isReference() }
+            ?.getData()
+            ?.takeIf { it != 0 }
+            ?: applicationThemeId
+
+        if (originalThemeId != null && originalThemeId != 0) {
+            val meta = CollectionUtil.toList(component.getElements("meta-data"))
+                .firstOrNull { it.searchAttributeByResourceId(ATTR_META_NAME)?.getValueAsString() == ORIGINAL_THEME_META }
+                ?: component.addElement("meta-data")
+            meta.getOrCreateAndroidAttribute("name", ATTR_META_NAME)
+                .setValueAsString(ORIGINAL_THEME_META)
+            meta.getOrCreateAndroidAttribute("resource", ATTR_META_RESOURCE).apply {
+                setValueType(ValueType.REFERENCE)
+                setData(originalThemeId)
+            }
+        }
+
+        component.getOrCreateAndroidAttribute("theme", ATTR_THEME).apply {
+            setValueType(ValueType.REFERENCE)
+            setData(floatingDialogThemeId)
+        }
+    }
+
+    private fun addFloatingBootstrapProvider(appElement: ResXmlElement, clonePkg: String) {
+        val provider = CollectionUtil.toList(appElement.getElements(TAG_PROVIDER))
+            .firstOrNull { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == FLOATING_PROVIDER }
+            ?: appElement.addElement(TAG_PROVIDER)
+        provider.getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(FLOATING_PROVIDER)
+        provider.getOrCreateAndroidAttribute("authorities", ATTR_AUTHORITIES)
+            .setValueAsString("$clonePkg.fuku.floating.init")
+        provider.getOrCreateAndroidAttribute("exported", ATTR_EXPORTED).setValueAsBoolean(false)
+        provider.getOrCreateAndroidAttribute("initOrder", ATTR_INIT_ORDER).apply {
+            setValueType(ValueType.DEC)
+            setData(1000)
+        }
+    }
+
+    private fun setApplicationMetadataBoolean(appElement: ResXmlElement, name: String, value: Boolean) {
+        val meta = CollectionUtil.toList(appElement.getElements("meta-data"))
+            .firstOrNull { it.searchAttributeByResourceId(ATTR_META_NAME)?.getValueAsString() == name }
+            ?: appElement.addElement("meta-data")
+        meta.getOrCreateAndroidAttribute("name", ATTR_META_NAME).setValueAsString(name)
+        meta.getOrCreateAndroidAttribute("value", ATTR_META_VALUE).setValueAsBoolean(value)
+    }
 
     private fun requireManifestElement(manifest: AndroidManifestBlock): ResXmlElement {
         return manifest.getManifestElement()

@@ -123,13 +123,20 @@ class CloneApkBuilder(private val context: Context) {
         }
 
         val mutator = ManifestAndArscMutator()
+        val dialogThemeId = context.resources.getIdentifier(
+            "Theme.Material.Dialog.NoActionBar", "style", "android"
+        ).takeIf { it != 0 } ?: context.resources.getIdentifier(
+            "Theme.Material.Dialog", "style", "android"
+        )
+        require(dialogThemeId != 0) { "This Android version does not expose a Material Dialog theme for floating activities." }
         val mutation = buildStep("Mutate base APK manifest and resources") { mutator.mutateBaseApk(
             baseApkFile = stagedApks.first(),
             origPkg = originalPackage,
             clonePkg = clonePackage,
             cloneSuffix = suffix,
             customAppLabel = "$appLabel (Fuku)",
-            forceLandscape = false
+            forceLandscape = false,
+            floatingDialogThemeId = dialogThemeId
         ) }
         // Resolve relative Application and AppComponentFactory names back to the original DEX namespace.
         buildStep("Preserve original Application and AppComponentFactory names") { fixApplicationClassNames(stagedApks.first(), mutation.originalApplicationClass, mutation.originalAppComponentFactory) }
@@ -137,7 +144,8 @@ class CloneApkBuilder(private val context: Context) {
         require(mutation.originalLauncherActivity != null) {
             "The source app has no supported launcher activity."
         }
-        Log.d(LOG_TAG, "Keeping the original launcher component; no runtime DEX payload will be injected.")
+        buildStep("Inject clone-owned floating window runtime") { DexPayloadInjector(context).inject(stagedApks.first()) }
+        Log.d(LOG_TAG, "Injected the clone-owned dialog-window runtime; Fuku does not launch or control the clone window.")
 
         val authorities = mutation.authorityMap.toMutableMap()
         val permissions = mutation.permissionMap.toMutableMap()
@@ -150,7 +158,9 @@ class CloneApkBuilder(private val context: Context) {
                 cloneSuffix = suffix,
                 authorityMap = authorities,
                 permissionMap = permissions,
-                accountTypeMap = accounts
+                accountTypeMap = accounts,
+                originalApplicationThemeId = mutation.originalApplicationThemeId,
+                floatingDialogThemeId = dialogThemeId
             ) }
         }
 
