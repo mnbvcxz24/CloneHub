@@ -7,6 +7,7 @@ import com.reandroid.arsc.chunk.xml.AndroidManifestBlock
 import com.reandroid.arsc.chunk.xml.ResXmlAttribute
 import com.reandroid.arsc.chunk.xml.ResXmlDocument
 import com.reandroid.arsc.chunk.xml.ResXmlElement
+import com.reandroid.arsc.value.ValueType
 import com.reandroid.utils.collection.CollectionUtil
 import java.io.File
 import java.io.IOException
