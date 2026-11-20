@@ -1,7 +1,9 @@
 package com.moldyhub.fuku
 
+import android.app.ActivityOptions
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.content.Intent
 import android.net.Uri
@@ -99,6 +101,7 @@ class MainActivity : ComponentActivity() {
                         onClone = ::cloneWorkspace,
                         onCloneApp = ::cloneApp,
                         onImportApk = ::importApk,
+                        onLaunchFloating = ::launchCloneFloating,
                     )
                 }
             }
@@ -111,6 +114,45 @@ class MainActivity : ComponentActivity() {
         refreshWorkspaces()
     }
 
+    @Suppress("DEPRECATION")
+    private fun launchCloneFloating(sourcePackage: String): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            return "Floating-window launch requires Android 7.0 or newer."
+        }
+        return runCatching {
+            val prefix = "$sourcePackage.fuku.c"
+            val clonePackage = packageManager.getInstalledApplications(0)
+                .asSequence()
+                .map { it.packageName }
+                .filter { it.startsWith(prefix) && it.removePrefix(prefix).matches(Regex("\\d{3}")) }
+                .sorted()
+                .firstOrNull()
+                ?: return "No installed Fuku clone was found for $sourcePackage. Create and install the clone first."
+
+            val launchIntent = packageManager.getLaunchIntentForPackage(clonePackage)
+                ?: return "The installed clone has no launchable activity."
+            val metrics = resources.displayMetrics
+            val screenWidth = metrics.widthPixels
+            val screenHeight = metrics.heightPixels
+            val width = (screenWidth * 0.72f).toInt().coerceAtLeast(320)
+            val height = (screenHeight * 0.62f).toInt().coerceAtLeast(480)
+            val left = ((screenWidth - width) / 2).coerceAtLeast(0)
+            val top = ((screenHeight - height) / 2).coerceAtLeast(0)
+            val bounds = Rect(left, top, left + width, top + height)
+            val options = ActivityOptions.makeBasic().setLaunchBounds(bounds)
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(launchIntent, options.toBundle())
+
+            val freeform = packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)
+            if (freeform) {
+                "Floating-window launch requested for $clonePackage. Android may still apply your device's window policy."
+            } else {
+                "Launch requested for $clonePackage with floating bounds, but this device does not advertise freeform-window support. If it opens full-screen, enable your device's freeform/multi-window option (if available); Fuku cannot override a system restriction."
+            }
+        }.getOrElse { error ->
+            "Could not request floating launch: ${error.message ?: error.javaClass.simpleName}"
+        }
+    }
     private fun cloneApp(app: InstalledApp, mode: CloneOutputMode, onComplete: (String) -> Unit) {
         prepareApks(app) { prepared ->
             if (!prepared.startsWith("Prepared and verified")) {
@@ -378,6 +420,7 @@ private fun FukuHome(
     onClone: (PreparedWorkspace, CloneOutputMode, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
     onImportApk: (Uri, (String) -> Unit) -> Unit,
+    onLaunchFloating: (String) -> String,
 ) {
     var search by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
@@ -390,6 +433,7 @@ private fun FukuHome(
     var cloneResult by remember { mutableStateOf<String?>(null) }
     var outputMode by remember { mutableStateOf(CloneOutputMode.EXTRACT) }
     var importResult by remember { mutableStateOf<String?>(null) }
+    var floatingLaunchResult by remember { mutableStateOf<String?>(null) }
     val importApkLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onImportApk(uri) { importResult = it }
     }
@@ -572,10 +616,25 @@ private fun FukuHome(
                 }
             },
             dismissButton = {
-                TextButton(enabled = preparingPackage != app.packageName, onClick = { selectedApp = null }) {
-                    Text("Close")
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(
+                        enabled = preparingPackage != app.packageName,
+                        onClick = { floatingLaunchResult = onLaunchFloating(app.packageName) }
+                    ) { Text("Launch clone floating") }
+                    TextButton(enabled = preparingPackage != app.packageName, onClick = { selectedApp = null }) {
+                        Text("Close")
+                    }
                 }
             }
+        )
+    }
+
+    floatingLaunchResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { floatingLaunchResult = null },
+            title = { Text("Floating launch") },
+            text = { Text(result) },
+            confirmButton = { TextButton(onClick = { floatingLaunchResult = null }) { Text("OK") } }
         )
     }
 
