@@ -1,15 +1,11 @@
 package com.moldyhub.fuku
 
-import android.app.ActivityOptions
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import android.os.Build
-import android.util.DisplayMetrics
 import android.util.Log
 import android.widget.Toast
 import android.os.Bundle
@@ -57,7 +53,6 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.Properties
-import org.lsposed.hiddenapibypass.HiddenApiBypass
 
 enum class CloneOutputMode { INSTALL, EXTRACT }
 
@@ -184,38 +179,17 @@ class MainActivity : ComponentActivity() {
         refreshClonedApps()
     }
 
-    private fun launchClone(packageName: String, floating: Boolean) {
+    private fun launchClone(packageName: String) {
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         if (launchIntent == null) {
             Toast.makeText(this, "The cloned app is not launchable or is no longer installed.", Toast.LENGTH_LONG).show()
             refreshClonedApps()
             return
         }
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (!floating) {
-            runCatching { startActivity(launchIntent) }
-                .onFailure { Toast.makeText(this, "Could not open cloned app: ${it.message}", Toast.LENGTH_LONG).show() }
-            return
-        }
-        try {
-            HiddenApiBypass.addHiddenApiExemptions("")
-            val options = ActivityOptions.makeBasic()
-            val methodName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) "setLaunchWindowingMode" else "setLaunchStackId"
-            val windowingMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) 5 else 2
-            val method = ActivityOptions::class.java.getDeclaredMethod(methodName, Int::class.javaPrimitiveType)
-            method.isAccessible = true
-            method.invoke(options, windowingMode)
-            val metrics: DisplayMetrics = resources.displayMetrics
-            val width = maxOf(320, (metrics.widthPixels * 0.72f).toInt())
-            val height = maxOf(480, (metrics.heightPixels * 0.72f).toInt())
-            val left = maxOf(0, (metrics.widthPixels - width) / 2)
-            val top = maxOf(0, (metrics.heightPixels - height) / 2)
-            options.setLaunchBounds(Rect(left, top, left + width, top + height))
-            startActivity(launchIntent, options.toBundle())
-        } catch (error: Throwable) {
-            Log.e("FukuFloat", "Freeform launch rejected for $packageName", error)
-            Toast.makeText(this, "Floating launch is not available on this device or was blocked by Android: ${error.message ?: error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
-        }
+        // The clone's injected provider requests freeform automatically. Fuku
+        // only starts the package normally and is not part of the floating runtime.
+        runCatching { startActivity(launchIntent) }
+            .onFailure { Toast.makeText(this, "Could not open cloned app: ${it.message}", Toast.LENGTH_LONG).show() }
     }
 
     private fun refreshWorkspaces() {
@@ -445,7 +419,7 @@ private fun FukuHome(
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
     onClone: (PreparedWorkspace, CloneOutputMode, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
-    onLaunchClone: (String, Boolean) -> Unit,
+    onLaunchClone: (String) -> Unit,
     onImportApk: (Uri, (String) -> Unit) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
@@ -542,7 +516,7 @@ private fun FukuHome(
             }
         }
         Text("Cloned apps", fontWeight = FontWeight.SemiBold)
-        Text("${clonedApps.size} installed clone(s) • Open normally or request a floating window", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${clonedApps.size} installed clone(s) • Clones automatically request a floating window when opened", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (clonedApps.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(0.30f, fill = false),
@@ -564,8 +538,7 @@ private fun FukuHome(
                                 Text(clone.packageName, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Button(onClick = { onLaunchClone(clone.packageName, false) }) { Text("Open") }
-                                Button(onClick = { onLaunchClone(clone.packageName, true) }) { Text("Float") }
+                                Button(onClick = { onLaunchClone(clone.packageName) }) { Text("Open") }
                             }
                         }
                     }
