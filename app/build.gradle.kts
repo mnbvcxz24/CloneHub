@@ -10,21 +10,8 @@ android {
         applicationId = "com.moldyhub.fuku"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.4.4-alpha06"
-    }
-    flavorDimensions += "edition"
-    productFlavors {
-        create("lite") {
-            dimension = "edition"
-            applicationIdSuffix = ".lite"
-            resValue("string", "app_name", "Fuku Lite")
-        }
-        create("universal") {
-            dimension = "edition"
-            applicationIdSuffix = ".universal"
-            resValue("string", "app_name", "Fuku Universal")
-        }
+        versionCode = 13
+        versionName = "0.4.4-alpha07"
     }
     buildTypes {
         debug { isMinifyEnabled = false }
