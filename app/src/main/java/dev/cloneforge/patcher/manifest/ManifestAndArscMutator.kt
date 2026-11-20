@@ -58,7 +58,6 @@ class ManifestAndArscMutator {
         private const val ATTR_TASK_AFFINITY = 0x01010012
         private const val ATTR_LABEL = 0x01010001
         private const val ATTR_AUTHORITIES = 0x01010018
-        private const val ATTR_META_VALUE = 0x01010024
         private const val ATTR_EXPORTED = 0x01010010
         private const val ATTR_TARGET_ACTIVITY = 0x01010202
         private const val ATTR_APP_COMPONENT_FACTORY = 0x0101057a
@@ -381,7 +380,7 @@ class ManifestAndArscMutator {
         if (originalThemeId != null && originalThemeId != 0) {
             val meta = CollectionUtil.toList(component.getElements("meta-data"))
                 .firstOrNull { it.searchAttributeByResourceId(ATTR_META_NAME)?.getValueAsString() == ORIGINAL_THEME_META }
-                ?: component.addElement("meta-data")
+                ?: component.newElement("meta-data")
             meta.getOrCreateAndroidAttribute("name", ATTR_META_NAME)
                 .setValueAsString(ORIGINAL_THEME_META)
             meta.getOrCreateAndroidAttribute("resource", ATTR_META_RESOURCE).apply {
@@ -399,7 +398,7 @@ class ManifestAndArscMutator {
     private fun addFloatingBootstrapProvider(appElement: ResXmlElement, clonePkg: String) {
         val provider = CollectionUtil.toList(appElement.getElements(TAG_PROVIDER))
             .firstOrNull { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == FLOATING_PROVIDER }
-            ?: appElement.addElement(TAG_PROVIDER)
+            ?: appElement.newElement(TAG_PROVIDER)
         provider.getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(FLOATING_PROVIDER)
         provider.getOrCreateAndroidAttribute("authorities", ATTR_AUTHORITIES)
             .setValueAsString("$clonePkg.fuku.floating.init")
@@ -413,7 +412,7 @@ class ManifestAndArscMutator {
     private fun setApplicationMetadataBoolean(appElement: ResXmlElement, name: String, value: Boolean) {
         val meta = CollectionUtil.toList(appElement.getElements("meta-data"))
             .firstOrNull { it.searchAttributeByResourceId(ATTR_META_NAME)?.getValueAsString() == name }
-            ?: appElement.addElement("meta-data")
+            ?: appElement.newElement("meta-data")
         meta.getOrCreateAndroidAttribute("name", ATTR_META_NAME).setValueAsString(name)
         meta.getOrCreateAndroidAttribute("value", ATTR_META_VALUE).setValueAsBoolean(value)
     }
