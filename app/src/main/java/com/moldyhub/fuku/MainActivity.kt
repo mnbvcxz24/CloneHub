@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.os.Build
 import android.widget.Toast
 import android.os.Bundle
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -117,8 +118,9 @@ class MainActivity : ComponentActivity() {
     @Suppress("DEPRECATION")
     private fun launchCloneFloating(sourcePackage: String): String {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            return "Floating-window launch requires Android 7.0 or newer."
+            return "Freeform windows require Android 7.0 or newer."
         }
+
         return runCatching {
             val prefix = "$sourcePackage.fuku.c"
             val clonePackage = packageManager.getInstalledApplications(0)
@@ -129,8 +131,15 @@ class MainActivity : ComponentActivity() {
                 .firstOrNull()
                 ?: return "No installed Fuku clone was found for $sourcePackage. Create and install the clone first."
 
+            val freeformEnabled = packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT) ||
+                Settings.Global.getInt(contentResolver, "enable_freeform_support", 0) != 0
+            if (!freeformEnabled) {
+                return "Android freeform support is not enabled on this device. Taskbar requires a one-time device setup for this; Fuku cannot silently change this protected system setting."
+            }
+
             val launchIntent = packageManager.getLaunchIntentForPackage(clonePackage)
                 ?: return "The installed clone has no launchable activity."
+
             val metrics = resources.displayMetrics
             val screenWidth = metrics.widthPixels
             val screenHeight = metrics.heightPixels
@@ -138,21 +147,29 @@ class MainActivity : ComponentActivity() {
             val height = (screenHeight * 0.62f).toInt().coerceAtLeast(480)
             val left = ((screenWidth - width) / 2).coerceAtLeast(0)
             val top = ((screenHeight - height) / 2).coerceAtLeast(0)
-            val bounds = Rect(left, top, left + width, top + height)
-            val options = ActivityOptions.makeBasic().setLaunchBounds(bounds)
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            // Taskbar requests WINDOWING_MODE_FREEFORM (5), not just launch bounds.
+            HiddenApiBypass.addHiddenApiExemptions("")
+            val options = ActivityOptions.makeBasic()
+            val methodName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                "setLaunchWindowingMode"
+            } else {
+                "setLaunchStackId"
+            }
+            val freeformMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) 5 else 2
+            val modeMethod = ActivityOptions::class.java.getMethod(methodName, Int::class.javaPrimitiveType)
+            modeMethod.invoke(options, freeformMode)
+            options.setLaunchBounds(Rect(left, top, left + width, top + height))
+
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
             startActivity(launchIntent, options.toBundle())
 
-            val freeform = packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)
-            if (freeform) {
-                "Floating-window launch requested for $clonePackage. Android may still apply your device's window policy."
-            } else {
-                "Launch requested for $clonePackage with floating bounds, but this device does not advertise freeform-window support. If it opens full-screen, enable your device's freeform/multi-window option (if available); Fuku cannot override a system restriction."
-            }
+            "Freeform launch requested for $clonePackage using Android's freeform windowing mode. If Android rejects it, the device's freeform setup or OEM window policy is blocking the request."
         }.getOrElse { error ->
-            "Could not request floating launch: ${error.message ?: error.javaClass.simpleName}"
+            "Could not launch the clone in freeform mode: ${error.message ?: error.javaClass.simpleName}"
         }
     }
+
     private fun cloneApp(app: InstalledApp, mode: CloneOutputMode, onComplete: (String) -> Unit) {
         prepareApks(app) { prepared ->
             if (!prepared.startsWith("Prepared and verified")) {
