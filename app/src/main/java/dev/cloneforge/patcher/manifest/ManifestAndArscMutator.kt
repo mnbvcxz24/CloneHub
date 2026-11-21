@@ -377,7 +377,7 @@ class ManifestAndArscMutator {
             ATTR_SUPPORTS_PICTURE_IN_PICTURE
         ).setValueAsBoolean(true)
 
-        val existing = component.searchAttributeByResourceId(ATTR_CONFIG_CHANGES)?.data ?: 0
+        val existing = component.searchAttributeByResourceId(ATTR_CONFIG_CHANGES)?.getData() ?: 0
         component.getOrCreateAndroidAttribute("configChanges", ATTR_CONFIG_CHANGES).apply {
             setValueType(ValueType.DEC)
             setData(existing or PIP_CONFIG_CHANGES)
