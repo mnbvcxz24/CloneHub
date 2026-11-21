@@ -67,9 +67,6 @@ class ManifestAndArscMutator {
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
         private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
         private const val ATTR_RESIZEABLE_ACTIVITY = 0x010104f6
-        private const val ATTR_SUPPORTS_PICTURE_IN_PICTURE = 0x010104f8
-        private const val ATTR_CONFIG_CHANGES = 0x0101001f
-        private const val PIP_CONFIG_CHANGES = 0x00000d80
         private const val ATTR_THEME = 0x01010000
         private const val ATTR_META_RESOURCE = 0x01010025
         private const val ATTR_META_NAME = 0x01010003
@@ -169,6 +166,12 @@ class ManifestAndArscMutator {
             }
         }
 
+        // The injected minimize bubble uses a system overlay and moves the clone task to the back.
+        if (floatingDialogThemeId != null) {
+            addUsesPermission(rootManifest, "android.permission.SYSTEM_ALERT_WINDOW")
+            addUsesPermission(rootManifest, "android.permission.REORDER_TASKS")
+        }
+
         // 5. Mutate <application>.
         val appElement = CollectionUtil.toList(rootManifest.getElements(TAG_APPLICATION))
             .firstOrNull() ?: throw IOException("Missing <application> element in $baseApkFile")
@@ -208,9 +211,6 @@ class ManifestAndArscMutator {
                 comp.getOrCreateAndroidAttribute("resizeableActivity", ATTR_RESIZEABLE_ACTIVITY)
                     .setValueAsBoolean(true)
                 floatingDialogThemeId?.let { patchFloatingTheme(comp, originalApplicationThemeId, it) }
-            }
-            if (comp.equalsName("activity")) {
-                patchPictureInPictureSupport(comp)
             }
             if (forceLandscape && comp.equalsName("activity")) {
                 comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
@@ -335,9 +335,6 @@ class ManifestAndArscMutator {
                         .setValueAsBoolean(true)
                     floatingDialogThemeId?.let { patchFloatingTheme(comp, originalApplicationThemeId, it) }
                 }
-                if (comp.equalsName("activity")) {
-                    patchPictureInPictureSupport(comp)
-                }
                 if (comp.equalsName(TAG_PROVIDER)) {
                     val authAttr = comp.searchAttributeByResourceId(ATTR_AUTHORITIES)
                     val rawAuths = authAttr?.getValueAsString()
@@ -371,17 +368,12 @@ class ManifestAndArscMutator {
     // --------------------------------------------------------------
 
 
-    private fun patchPictureInPictureSupport(component: ResXmlElement) {
-        component.getOrCreateAndroidAttribute(
-            "supportsPictureInPicture",
-            ATTR_SUPPORTS_PICTURE_IN_PICTURE
-        ).setValueAsBoolean(true)
-
-        val existing = component.searchAttributeByResourceId(ATTR_CONFIG_CHANGES)?.getData() ?: 0
-        component.getOrCreateAndroidAttribute("configChanges", ATTR_CONFIG_CHANGES).apply {
-            setValueType(ValueType.DEC)
-            setData(existing or PIP_CONFIG_CHANGES)
-        }
+    private fun addUsesPermission(manifestElement: ResXmlElement, name: String) {
+        val exists = CollectionUtil.toList(manifestElement.getElements(TAG_USES_PERMISSION))
+            .any { it.searchAttributeByResourceId(ATTR_NAME)?.getValueAsString() == name }
+        if (exists) return
+        val element = manifestElement.newElement(TAG_USES_PERMISSION)
+        element.getOrCreateAndroidAttribute("name", ATTR_NAME).setValueAsString(name)
     }
 
     private fun patchFloatingTheme(
