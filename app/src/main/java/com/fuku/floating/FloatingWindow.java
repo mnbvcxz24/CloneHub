@@ -204,13 +204,11 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                 activity.getWindow().setAttributes(p);
             }
         });
-        maximizeButtonRef[0] = maximizeButton;
         bar.addView(maximizeButton);
 
         final TextView closeButton = button(activity, "×", density, new View.OnClickListener() {
             @Override public void onClick(View view) { activity.finish(); }
         });
-        closeButtonRef[0] = closeButton;
         bar.addView(closeButton);
 
         bar.setOnTouchListener(new View.OnTouchListener() {
