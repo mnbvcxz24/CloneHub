@@ -67,6 +67,9 @@ class ManifestAndArscMutator {
         private const val ATTR_SEARCH_SUGGEST_AUTHORITY = 0x010101d6
         private const val ATTR_SCREEN_ORIENTATION = 0x0101001e
         private const val ATTR_RESIZEABLE_ACTIVITY = 0x010104f6
+        private const val ATTR_SUPPORTS_PICTURE_IN_PICTURE = 0x010104f8
+        private const val ATTR_CONFIG_CHANGES = 0x0101001f
+        private const val PIP_CONFIG_CHANGES = 0x00000d80
         private const val ATTR_THEME = 0x01010000
         private const val ATTR_META_RESOURCE = 0x01010025
         private const val ATTR_META_NAME = 0x01010003
@@ -206,6 +209,9 @@ class ManifestAndArscMutator {
                     .setValueAsBoolean(true)
                 floatingDialogThemeId?.let { patchFloatingTheme(comp, originalApplicationThemeId, it) }
             }
+            if (comp.equalsName("activity")) {
+                patchPictureInPictureSupport(comp)
+            }
             if (forceLandscape && comp.equalsName("activity")) {
                 comp.getOrCreateAndroidAttribute("screenOrientation", ATTR_SCREEN_ORIENTATION)
                     .apply {
@@ -329,6 +335,9 @@ class ManifestAndArscMutator {
                         .setValueAsBoolean(true)
                     floatingDialogThemeId?.let { patchFloatingTheme(comp, originalApplicationThemeId, it) }
                 }
+                if (comp.equalsName("activity")) {
+                    patchPictureInPictureSupport(comp)
+                }
                 if (comp.equalsName(TAG_PROVIDER)) {
                     val authAttr = comp.searchAttributeByResourceId(ATTR_AUTHORITIES)
                     val rawAuths = authAttr?.getValueAsString()
@@ -361,6 +370,19 @@ class ManifestAndArscMutator {
     // Helpers
     // --------------------------------------------------------------
 
+
+    private fun patchPictureInPictureSupport(component: ResXmlElement) {
+        component.getOrCreateAndroidAttribute(
+            "supportsPictureInPicture",
+            ATTR_SUPPORTS_PICTURE_IN_PICTURE
+        ).setValueAsBoolean(true)
+
+        val existing = component.searchAttributeByResourceId(ATTR_CONFIG_CHANGES)?.data ?: 0
+        component.getOrCreateAndroidAttribute("configChanges", ATTR_CONFIG_CHANGES).apply {
+            setValueType(ValueType.DEC)
+            setData(existing or PIP_CONFIG_CHANGES)
+        }
+    }
 
     private fun patchFloatingTheme(
         component: ResXmlElement,
