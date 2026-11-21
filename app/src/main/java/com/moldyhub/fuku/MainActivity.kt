@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
                 onComplete("APK preparation finished, but the verified workspace could not be found.")
                 return@prepareApks
             }
-            cloneWorkspace(workspace, mode) { result -> onComplete(prepared + "\n\n" + result) }
+            cloneWorkspace(workspace, mode, 1) { result -> onComplete(prepared + "\n\n" + result) }
         }
     }
 
