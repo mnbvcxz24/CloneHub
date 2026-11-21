@@ -163,6 +163,7 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         final int[][] normalBounds = {null};
         final int[][] previous = {null};
         final View[] resizeHandle = {null};
+        final TextView[] minimizeButtonRef = {null};
         final TextView[] maximizeButtonRef = {null};
         final TextView[] closeButtonRef = {null};
 
@@ -178,10 +179,12 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                     if (maximizeButtonRef[0] != null) maximizeButtonRef[0].setVisibility(View.GONE);
                     if (closeButtonRef[0] != null) closeButtonRef[0].setVisibility(View.GONE);
                     bar.setBackground(makeBubbleBackground());
-                    minimizeButton.setText("F");
-                    minimizeButton.setTextSize(18);
-                    minimizeButton.setLayoutParams(new LinearLayout.LayoutParams(
-                            Math.round(56 * density), Math.round(56 * density)));
+                    if (minimizeButtonRef[0] != null) {
+                        minimizeButtonRef[0].setText("F");
+                        minimizeButtonRef[0].setTextSize(18);
+                        minimizeButtonRef[0].setLayoutParams(new LinearLayout.LayoutParams(
+                                Math.round(56 * density), Math.round(56 * density)));
+                    }
                     barParams.width = Math.round(56 * density);
                     barParams.height = Math.round(56 * density);
                     bar.setLayoutParams(barParams);
@@ -195,10 +198,12 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                     if (maximizeButtonRef[0] != null) maximizeButtonRef[0].setVisibility(View.VISIBLE);
                     if (closeButtonRef[0] != null) closeButtonRef[0].setVisibility(View.VISIBLE);
                     bar.setBackgroundColor(0xFF202124);
-                    minimizeButton.setText("–");
-                    minimizeButton.setTextSize(18);
-                    minimizeButton.setLayoutParams(new LinearLayout.LayoutParams(
-                            Math.round(42 * density), ViewGroup.LayoutParams.MATCH_PARENT));
+                    if (minimizeButtonRef[0] != null) {
+                        minimizeButtonRef[0].setText("–");
+                        minimizeButtonRef[0].setTextSize(18);
+                        minimizeButtonRef[0].setLayoutParams(new LinearLayout.LayoutParams(
+                                Math.round(42 * density), ViewGroup.LayoutParams.MATCH_PARENT));
+                    }
                     barParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
                     barParams.height = barHeight;
                     bar.setLayoutParams(barParams);
@@ -212,6 +217,7 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                 activity.getWindow().setAttributes(p);
             }
         });
+        minimizeButtonRef[0] = minimizeButton;
         bar.addView(minimizeButton);
 
         final TextView maximizeButton = button(activity, "□", density, new View.OnClickListener() {
