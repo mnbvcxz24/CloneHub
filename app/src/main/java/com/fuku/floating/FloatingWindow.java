@@ -77,8 +77,10 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
             if (metadata == null) return;
             int originalTheme = metadata.getInt("com.fuku.floating.ORIGINAL_THEME", 0);
             if (originalTheme != 0) {
-                activity.setTheme(originalTheme);
-                android.util.Log.d("FukuFloating", "Restored original activity theme: "
+                // Overlay original attributes without replacing the floating Dialog theme.
+                // This preserves windowIsFloating while restoring attributes the Dialog theme omits.
+                activity.getTheme().applyStyle(originalTheme, false);
+                android.util.Log.d("FukuFloating", "Overlaid original activity theme: "
                         + activity.getComponentName().flattenToShortString());
             }
         } catch (Throwable error) {
