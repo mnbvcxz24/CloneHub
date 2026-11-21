@@ -5,9 +5,14 @@ import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
+import android.content.res.Configuration;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
+import android.util.Rational;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -17,6 +22,8 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
+import android.app.PictureInPictureParams;
 
 import java.util.Collections;
 import java.util.Map;
@@ -35,6 +42,8 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
     private static final Set<Activity> INSTALLED =
             Collections.newSetFromMap(new WeakHashMap<Activity, Boolean>());
     private static final Map<Activity, View> DECORATIONS = new WeakHashMap<>();
+    private static final Map<Activity, View> RESIZE_HANDLES = new WeakHashMap<>();
+    private static final Map<Activity, View> APP_CONTENTS = new WeakHashMap<>();
     private static boolean callbacksRegistered;
 
     private FloatingWindow() {}
@@ -100,10 +109,37 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
     @Override public void onActivityCreated(Activity activity, Bundle state) {}
     @Override public void onActivityResumed(Activity activity) {}
     @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
+
+    @Override public void onActivityConfigurationChanged(Activity activity, Configuration newConfig) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        final boolean inPip = activity.isInPictureInPictureMode();
+        final View bar;
+        final View handle;
+        final View appContent;
+        synchronized (LOCK) {
+            bar = DECORATIONS.get(activity);
+            handle = RESIZE_HANDLES.get(activity);
+            appContent = APP_CONTENTS.get(activity);
+        }
+        if (bar != null) bar.setVisibility(inPip ? View.GONE : View.VISIBLE);
+        if (handle != null) handle.setVisibility(inPip ? View.GONE : View.VISIBLE);
+        if (appContent != null) {
+            ViewGroup.LayoutParams rawParams = appContent.getLayoutParams();
+            if (rawParams instanceof FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) rawParams;
+                params.topMargin = inPip
+                        ? 0 : Math.round(38 * activity.getResources().getDisplayMetrics().density);
+                appContent.setLayoutParams(params);
+            }
+        }
+    }
+
     @Override public void onActivityDestroyed(Activity activity) {
         synchronized (LOCK) {
             INSTALLED.remove(activity);
             DECORATIONS.remove(activity);
+            RESIZE_HANDLES.remove(activity);
+            APP_CONTENTS.remove(activity);
         }
     }
 
@@ -234,6 +270,17 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         minimizeButtonRef[0] = minimizeButton;
         bar.addView(minimizeButton);
 
+        // Keep the existing in-window bubble minimize as a fallback while PiP is tested.
+        final TextView pipButton = button(activity, "PiP", density, new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                enterPictureInPicture(activity);
+            }
+        });
+        pipButton.setTextSize(12);
+        pipButton.setLayoutParams(new LinearLayout.LayoutParams(
+                Math.round(48 * density), ViewGroup.LayoutParams.MATCH_PARENT));
+        bar.addView(pipButton);
+
         final TextView maximizeButton = button(activity, "□", density, new View.OnClickListener() {
             @Override public void onClick(View view) {
                 WindowManager.LayoutParams p = activity.getWindow().getAttributes();
@@ -335,6 +382,38 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         synchronized (LOCK) {
             INSTALLED.add(activity);
             DECORATIONS.put(activity, bar);
+            RESIZE_HANDLES.put(activity, handle);
+            APP_CONTENTS.put(activity, appContent);
+        }
+    }
+
+    private static void enterPictureInPicture(Activity activity) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            Toast.makeText(activity, "PiP mode is available on Android 10 and newer",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!activity.getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            Toast.makeText(activity, "This device does not support Picture-in-Picture",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            Rect sourceRect = new Rect();
+            activity.getWindow().getDecorView().getGlobalVisibleRect(sourceRect);
+            PictureInPictureParams params = new PictureInPictureParams.Builder()
+                    .setAspectRatio(new Rational(1, 1))
+                    .setSourceRectHint(sourceRect)
+                    .build();
+            boolean entered = activity.enterPictureInPictureMode(params);
+            if (!entered) {
+                Toast.makeText(activity, "Android could not enter PiP mode",
+                        Toast.LENGTH_SHORT).show();
+            }
+        } catch (Throwable error) {
+            android.util.Log.e("FukuFloating", "Could not enter Picture-in-Picture mode", error);
+            Toast.makeText(activity, "Unable to enter PiP mode on this device",
+                    Toast.LENGTH_SHORT).show();
         }
     }
 
