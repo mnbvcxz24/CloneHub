@@ -53,7 +53,7 @@ class CloneApkBuilder(private val context: Context) {
         }
     }
 
-    fun build(workspacePath: String, originalPackage: String, appLabel: String, mode: CloneOutputMode): CloneBuildOutcome {
+    fun build(workspacePath: String, originalPackage: String, appLabel: String, mode: CloneOutputMode, customAppName: String? = null): CloneBuildOutcome {
         require(originalPackage.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
             "This package name cannot be safely converted to a clone ID."
         }
@@ -131,6 +131,8 @@ class CloneApkBuilder(private val context: Context) {
         }
         val clonePackage = "$originalPackage.fuku.c${cloneIndex.toString().padStart(3, '0')}"
         val suffix = "fuku_c${cloneIndex.toString().padStart(3, '0')}"
+        val customBaseName = customAppName?.trim()?.takeIf { it.isNotEmpty() }?.take(48)
+        val cloneDisplayName = if (customBaseName == null) "$appLabel Fuku $cloneIndex" else "$customBaseName $cloneIndex"
 
         val staging = File(context.cacheDir, "clone_build/$clonePackage").apply {
             if (exists()) deleteRecursively()
@@ -163,7 +165,7 @@ class CloneApkBuilder(private val context: Context) {
             origPkg = originalPackage,
             clonePkg = clonePackage,
             cloneSuffix = suffix,
-            customAppLabel = "$appLabel Fuku $cloneIndex",
+            customAppLabel = cloneDisplayName,
             forceLandscape = false,
             floatingDialogThemeId = dialogThemeId
         ) }
@@ -221,7 +223,7 @@ class CloneApkBuilder(private val context: Context) {
         val singleApk = signedApks.size == 1
         val number = cloneIndex.toString()
         val extension = if (singleApk) ".apk" else ".zip"
-        val cloneName = "$appLabel Fuku $number"
+        val cloneName = cloneDisplayName
         val fileName = "$cloneName$extension"
         val savedLocation = if (mode == CloneOutputMode.INSTALL) {
             buildStep("Install signed clone APK set") { installApks(clonePackage, signedApks) }

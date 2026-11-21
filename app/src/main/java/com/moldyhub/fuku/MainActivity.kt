@@ -31,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -132,7 +133,7 @@ class MainActivity : ComponentActivity() {
                 onComplete("APK preparation finished, but the verified workspace could not be found.")
                 return@prepareApks
             }
-            cloneWorkspace(workspace, mode, 1) { result -> onComplete(prepared + "\n\n" + result) }
+            cloneWorkspace(workspace, mode, 1, null) { result -> onComplete(prepared + "\n\n" + result) }
         }
     }
 
@@ -249,6 +250,7 @@ class MainActivity : ComponentActivity() {
         workspace: PreparedWorkspace,
         mode: CloneOutputMode,
         quantity: Int,
+        customAppName: String? = null,
         onComplete: (String) -> Unit
     ) {
         require(quantity in 1..10) { "Clone quantity must be between 1 and 10." }
@@ -264,7 +266,7 @@ class MainActivity : ComponentActivity() {
             val result = runCatching {
                 val builder = CloneApkBuilder(this)
                 val outcomes = (1..quantity).map {
-                    builder.build(workspace.directory, workspace.packageName, workspace.appLabel, mode)
+                    builder.build(workspace.directory, workspace.packageName, workspace.appLabel, mode, customAppName)
                 }
                 File(workspace.directory).deleteRecursively()
                 if (mode == CloneOutputMode.INSTALL) {
@@ -429,7 +431,7 @@ private fun FukuHome(
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
-    onClone: (PreparedWorkspace, CloneOutputMode, Int, (String) -> Unit) -> Unit,
+    onClone: (PreparedWorkspace, CloneOutputMode, Int, String?, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
     onLaunchClone: (String) -> Unit,
     onImportApk: (Uri, (String) -> Unit) -> Unit,
@@ -445,6 +447,7 @@ private fun FukuHome(
     var cloneResult by remember { mutableStateOf<String?>(null) }
     var outputMode by remember { mutableStateOf(CloneOutputMode.EXTRACT) }
     var cloneQuantity by remember { mutableStateOf(1) }
+    var customAppName by remember(selectedWorkspace?.directory) { mutableStateOf("") }
     var importResult by remember { mutableStateOf<String?>(null) }
     val importApkLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onImportApk(uri) { importResult = it }
@@ -687,7 +690,16 @@ private fun FukuHome(
                             TextButton(onClick = { cloneQuantity = (cloneQuantity + 1).coerceAtMost(10) }, enabled = cloneQuantity < 10) { Text("+") }
                         }
                     }
-                    Text("Each copy gets a new number and separate package ID.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Optional custom app name", fontWeight = FontWeight.Medium)
+                    OutlinedTextField(
+                        value = customAppName,
+                        onValueChange = { customAppName = it.take(48).replace("\n", "").replace("\r", "") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text(workspace.appLabel) },
+                        supportingText = { Text(if (customAppName.isBlank()) "Default: ${workspace.appLabel} Fuku 1" else "Clone names: ${customAppName.trim()} 1, ${customAppName.trim()} 2, ...") }
+                    )
+                    Text("The increment number stays at the end. Each copy gets a separate package ID.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("Saved path: ${workspace.directory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     analysisResult?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     cloneResult?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -700,7 +712,7 @@ private fun FukuHome(
                         onClick = {
                             cloningPackage = workspace.packageName
                             cloneResult = "Rewriting package metadata, signing, and saving the output..."
-                            onClone(workspace, outputMode, cloneQuantity) { result ->
+                            onClone(workspace, outputMode, cloneQuantity, customAppName.trim().takeIf { it.isNotEmpty() }) { result ->
                                 cloneResult = result
                                 cloningPackage = null
                                 if (result.startsWith("Saved successfully") || result.startsWith("Install request sent")) selectedWorkspace = null
