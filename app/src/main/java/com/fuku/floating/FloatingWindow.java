@@ -42,8 +42,6 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
     private static final Set<Activity> INSTALLED =
             Collections.newSetFromMap(new WeakHashMap<Activity, Boolean>());
     private static final Map<Activity, View> DECORATIONS = new WeakHashMap<>();
-    private static final Map<Activity, View> RESIZE_HANDLES = new WeakHashMap<>();
-    private static final Map<Activity, View> APP_CONTENTS = new WeakHashMap<>();
     private static boolean callbacksRegistered;
 
     private FloatingWindow() {}
@@ -110,36 +108,10 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
     @Override public void onActivityResumed(Activity activity) {}
     @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
 
-    @Override public void onActivityConfigurationChanged(Activity activity, Configuration newConfig) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        final boolean inPip = activity.isInPictureInPictureMode();
-        final View bar;
-        final View handle;
-        final View appContent;
-        synchronized (LOCK) {
-            bar = DECORATIONS.get(activity);
-            handle = RESIZE_HANDLES.get(activity);
-            appContent = APP_CONTENTS.get(activity);
-        }
-        if (bar != null) bar.setVisibility(inPip ? View.GONE : View.VISIBLE);
-        if (handle != null) handle.setVisibility(inPip ? View.GONE : View.VISIBLE);
-        if (appContent != null) {
-            ViewGroup.LayoutParams rawParams = appContent.getLayoutParams();
-            if (rawParams instanceof FrameLayout.LayoutParams) {
-                FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) rawParams;
-                params.topMargin = inPip
-                        ? 0 : Math.round(38 * activity.getResources().getDisplayMetrics().density);
-                appContent.setLayoutParams(params);
-            }
-        }
-    }
-
     @Override public void onActivityDestroyed(Activity activity) {
         synchronized (LOCK) {
             INSTALLED.remove(activity);
             DECORATIONS.remove(activity);
-            RESIZE_HANDLES.remove(activity);
-            APP_CONTENTS.remove(activity);
         }
     }
 
@@ -382,8 +354,6 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         synchronized (LOCK) {
             INSTALLED.add(activity);
             DECORATIONS.put(activity, bar);
-            RESIZE_HANDLES.put(activity, handle);
-            APP_CONTENTS.put(activity, appContent);
         }
     }
 
