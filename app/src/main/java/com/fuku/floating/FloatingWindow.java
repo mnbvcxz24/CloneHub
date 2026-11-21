@@ -5,14 +5,9 @@ import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
-import android.content.res.Configuration;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
-import android.util.Rational;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -22,8 +17,6 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
-import android.app.PictureInPictureParams;
 
 import java.util.Collections;
 import java.util.Map;
@@ -33,7 +26,7 @@ import java.util.WeakHashMap;
 /**
  * Adds an in-window title bar and resize handle to activities whose manifest theme
  * is based on a floating Dialog theme. No SYSTEM_ALERT_WINDOW or external window
- * manager is used; each activity keeps its own application window token.
+ * manager is used for the app window; minimize uses a separate overlay bubble.
  */
 public final class FloatingWindow implements Application.ActivityLifecycleCallbacks {
     private static final String PREFS = "fuku_floating";
@@ -105,10 +98,11 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
     @Override public void onActivityStopped(Activity activity) { saveBounds(activity); }
     @Override public void onActivityPaused(Activity activity) { saveBounds(activity); }
     @Override public void onActivityCreated(Activity activity, Bundle state) {}
-    @Override public void onActivityResumed(Activity activity) {}
+    @Override public void onActivityResumed(Activity activity) { FloatingBubble.hide(activity.getTaskId()); }
     @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
 
     @Override public void onActivityDestroyed(Activity activity) {
+        if (activity.isFinishing()) FloatingBubble.hide(activity.getTaskId());
         synchronized (LOCK) {
             INSTALLED.remove(activity);
             DECORATIONS.remove(activity);
@@ -181,77 +175,15 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                 ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
         final boolean[] maximized = {false};
-        final boolean[] minimized = {false};
-        final int[][] normalBounds = {null};
         final int[][] previous = {null};
         final View[] resizeHandle = {null};
-        final TextView[] minimizeButtonRef = {null};
-        final TextView[] maximizeButtonRef = {null};
-        final TextView[] closeButtonRef = {null};
 
+        // Send the whole clone task to the background and leave a draggable overlay bubble.
         final TextView minimizeButton = button(activity, "–", density, new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                WindowManager.LayoutParams p = activity.getWindow().getAttributes();
-                if (!minimized[0]) {
-                    normalBounds[0] = new int[] {p.x, p.y, p.width, p.height};
-                    minimized[0] = true;
-                    if (appContent != null) appContent.setVisibility(View.GONE);
-                    if (resizeHandle[0] != null) resizeHandle[0].setVisibility(View.GONE);
-                    title.setVisibility(View.GONE);
-                    if (maximizeButtonRef[0] != null) maximizeButtonRef[0].setVisibility(View.GONE);
-                    if (closeButtonRef[0] != null) closeButtonRef[0].setVisibility(View.GONE);
-                    bar.setBackground(makeBubbleBackground());
-                    if (minimizeButtonRef[0] != null) {
-                        minimizeButtonRef[0].setText("F");
-                        minimizeButtonRef[0].setTextSize(18);
-                        minimizeButtonRef[0].setLayoutParams(new LinearLayout.LayoutParams(
-                                Math.round(56 * density), Math.round(56 * density)));
-                    }
-                    barParams.width = Math.round(56 * density);
-                    barParams.height = Math.round(56 * density);
-                    bar.setLayoutParams(barParams);
-                    p.width = Math.round(56 * density);
-                    p.height = Math.round(56 * density);
-                } else {
-                    minimized[0] = false;
-                    if (appContent != null) appContent.setVisibility(View.VISIBLE);
-                    if (resizeHandle[0] != null) resizeHandle[0].setVisibility(View.VISIBLE);
-                    title.setVisibility(View.VISIBLE);
-                    if (maximizeButtonRef[0] != null) maximizeButtonRef[0].setVisibility(View.VISIBLE);
-                    if (closeButtonRef[0] != null) closeButtonRef[0].setVisibility(View.VISIBLE);
-                    bar.setBackgroundColor(0xFF202124);
-                    if (minimizeButtonRef[0] != null) {
-                        minimizeButtonRef[0].setText("–");
-                        minimizeButtonRef[0].setTextSize(18);
-                        minimizeButtonRef[0].setLayoutParams(new LinearLayout.LayoutParams(
-                                Math.round(42 * density), ViewGroup.LayoutParams.MATCH_PARENT));
-                    }
-                    barParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
-                    barParams.height = barHeight;
-                    bar.setLayoutParams(barParams);
-                    if (normalBounds[0] != null) {
-                        p.x = normalBounds[0][0];
-                        p.y = normalBounds[0][1];
-                        p.width = normalBounds[0][2];
-                        p.height = normalBounds[0][3];
-                    }
-                }
-                activity.getWindow().setAttributes(p);
-            }
+            @Override public void onClick(View view) { FloatingBubble.minimize(activity); }
         });
-        minimizeButtonRef[0] = minimizeButton;
         bar.addView(minimizeButton);
 
-        // Keep the existing in-window bubble minimize as a fallback while PiP is tested.
-        final TextView pipButton = button(activity, "PiP", density, new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                enterPictureInPicture(activity);
-            }
-        });
-        pipButton.setTextSize(12);
-        pipButton.setLayoutParams(new LinearLayout.LayoutParams(
-                Math.round(48 * density), ViewGroup.LayoutParams.MATCH_PARENT));
-        bar.addView(pipButton);
 
         final TextView maximizeButton = button(activity, "□", density, new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -357,36 +289,6 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         }
     }
 
-    private static void enterPictureInPicture(Activity activity) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            Toast.makeText(activity, "PiP mode is available on Android 10 and newer",
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (!activity.getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
-            Toast.makeText(activity, "This device does not support Picture-in-Picture",
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-        try {
-            Rect sourceRect = new Rect();
-            activity.getWindow().getDecorView().getGlobalVisibleRect(sourceRect);
-            PictureInPictureParams params = new PictureInPictureParams.Builder()
-                    .setAspectRatio(new Rational(1, 1))
-                    .setSourceRectHint(sourceRect)
-                    .build();
-            boolean entered = activity.enterPictureInPictureMode(params);
-            if (!entered) {
-                Toast.makeText(activity, "Android could not enter PiP mode",
-                        Toast.LENGTH_SHORT).show();
-            }
-        } catch (Throwable error) {
-            android.util.Log.e("FukuFloating", "Could not enter Picture-in-Picture mode", error);
-            Toast.makeText(activity, "Unable to enter PiP mode on this device",
-                    Toast.LENGTH_SHORT).show();
-        }
-    }
-
     private static FrameLayout ensureFrameLayout(Activity activity, View contentView) {
         if (contentView instanceof FrameLayout) return (FrameLayout) contentView;
         if (contentView == null) {
@@ -412,15 +314,6 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         android.util.Log.w("FukuFloating", "Wrapped non-FrameLayout android.R.id.content ("
                 + contentView.getClass().getName() + ") in FrameLayout");
         return wrapper;
-    }
-
-    private static android.graphics.drawable.Drawable makeBubbleBackground() {
-        android.graphics.drawable.GradientDrawable drawable =
-                new android.graphics.drawable.GradientDrawable();
-        drawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        drawable.setColor(0xFF7B2FF7);
-        drawable.setStroke(0, Color.TRANSPARENT);
-        return drawable;
     }
 
     private static TextView button(Context context, String label, float density,
