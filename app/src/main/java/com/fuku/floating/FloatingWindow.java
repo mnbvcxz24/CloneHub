@@ -55,6 +55,20 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
      * given the dialog theme during clone building.
      */
     @Override public void onActivityPreCreated(Activity activity, Bundle state) {
+        // Apply non-modal behavior before Android attaches the Activity window.
+        // Setting this only in onActivityStarted can be too late on some builds:
+        // the initial window may already have been registered as touch-modal.
+        try {
+            Window window = activity.getWindow();
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.dimAmount = 0f;
+            window.setAttributes(params);
+        } catch (Throwable error) {
+            android.util.Log.e("FukuFloating", "Could not configure non-modal window before creation", error);
+        }
+
         try {
             android.content.pm.ActivityInfo info = activity.getPackageManager()
                     .getActivityInfo(activity.getComponentName(),
