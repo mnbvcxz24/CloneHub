@@ -443,7 +443,8 @@ private fun FukuHome(
     var analyzingPackage by remember { mutableStateOf<String?>(null) }
     var cloningPackage by remember { mutableStateOf<String?>(null) }
     var cloneResult by remember { mutableStateOf<String?>(null) }
-    var outputMode by remember { mutableStateOf(CloneOutputMode.EXTRACT) }\n    var cloneQuantity by remember { mutableStateOf(1) }
+    var outputMode by remember { mutableStateOf(CloneOutputMode.EXTRACT) }
+    var cloneQuantity by remember { mutableStateOf(1) }
     var importResult by remember { mutableStateOf<String?>(null) }
     val importApkLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onImportApk(uri) { importResult = it }
