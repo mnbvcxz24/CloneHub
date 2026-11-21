@@ -245,7 +245,13 @@ class MainActivity : ComponentActivity() {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun cloneWorkspace(workspace: PreparedWorkspace, mode: CloneOutputMode, onComplete: (String) -> Unit) {
+    private fun cloneWorkspace(
+        workspace: PreparedWorkspace,
+        mode: CloneOutputMode,
+        quantity: Int,
+        onComplete: (String) -> Unit
+    ) {
+        require(quantity in 1..10) { "Clone quantity must be between 1 and 10." }
         if (mode == CloneOutputMode.INSTALL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !packageManager.canRequestPackageInstalls()
         ) {
@@ -256,10 +262,19 @@ class MainActivity : ComponentActivity() {
         }
         Thread {
             val result = runCatching {
-                val outcome = CloneApkBuilder(this).build(workspace.directory, workspace.packageName, workspace.appLabel, mode)
+                val builder = CloneApkBuilder(this)
+                val outcomes = (1..quantity).map {
+                    builder.build(workspace.directory, workspace.packageName, workspace.appLabel, mode)
+                }
                 File(workspace.directory).deleteRecursively()
-                if (mode == CloneOutputMode.INSTALL) "Install/update request sent for ${outcome.packageName}. Confirm in Android's installer if prompted."
-                else "Saved successfully: ${outcome.fileName}\nLocation: ${outcome.savedLocation}"
+                if (mode == CloneOutputMode.INSTALL) {
+                    "Install requests sent for ${outcomes.size} clone(s):\n" +
+                        outcomes.joinToString("\n") { it.packageName } +
+                        "\nConfirm each installation in Android's installer if prompted."
+                } else {
+                    "Saved successfully: ${outcomes.size} clone(s)\n" +
+                        outcomes.joinToString("\n") { "${it.fileName} — ${it.savedLocation}" }
+                }
             }.getOrElse { error ->
                 "Clone build failed: ${error.message ?: error.javaClass.simpleName}"
             }
@@ -414,7 +429,7 @@ private fun FukuHome(
     onRefresh: () -> Unit,
     onPrepare: (InstalledApp, (String) -> Unit) -> Unit,
     onAnalyze: (PreparedWorkspace, (String) -> Unit) -> Unit,
-    onClone: (PreparedWorkspace, CloneOutputMode, (String) -> Unit) -> Unit,
+    onClone: (PreparedWorkspace, CloneOutputMode, Int, (String) -> Unit) -> Unit,
     onCloneApp: (InstalledApp, CloneOutputMode, (String) -> Unit) -> Unit,
     onLaunchClone: (String) -> Unit,
     onImportApk: (Uri, (String) -> Unit) -> Unit,
@@ -428,7 +443,7 @@ private fun FukuHome(
     var analyzingPackage by remember { mutableStateOf<String?>(null) }
     var cloningPackage by remember { mutableStateOf<String?>(null) }
     var cloneResult by remember { mutableStateOf<String?>(null) }
-    var outputMode by remember { mutableStateOf(CloneOutputMode.EXTRACT) }
+    var outputMode by remember { mutableStateOf(CloneOutputMode.EXTRACT) }\n    var cloneQuantity by remember { mutableStateOf(1) }
     var importResult by remember { mutableStateOf<String?>(null) }
     val importApkLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onImportApk(uri) { importResult = it }
@@ -659,6 +674,19 @@ private fun FukuHome(
                     Text("APK files: ${workspace.apkCount}")
                     Text("Total size: ${String.format(Locale.US, "%.1f", workspace.totalBytes / (1024.0 * 1024.0))} MB")
                     Text("Integrity status: ${if (workspace.filesValid) "Files present" else "Missing or incomplete files"}")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Clone quantity", fontWeight = FontWeight.Medium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { cloneQuantity = (cloneQuantity - 1).coerceAtLeast(1) }, enabled = cloneQuantity > 1) { Text("−") }
+                            Text("$cloneQuantity / 10", fontWeight = FontWeight.SemiBold)
+                            TextButton(onClick = { cloneQuantity = (cloneQuantity + 1).coerceAtMost(10) }, enabled = cloneQuantity < 10) { Text("+") }
+                        }
+                    }
+                    Text("Each copy gets a new number and separate package ID.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("Saved path: ${workspace.directory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     analysisResult?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     cloneResult?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -671,7 +699,7 @@ private fun FukuHome(
                         onClick = {
                             cloningPackage = workspace.packageName
                             cloneResult = "Rewriting package metadata, signing, and saving the output..."
-                            onClone(workspace, outputMode) { result ->
+                            onClone(workspace, outputMode, cloneQuantity) { result ->
                                 cloneResult = result
                                 cloningPackage = null
                                 if (result.startsWith("Saved successfully") || result.startsWith("Install request sent")) selectedWorkspace = null
