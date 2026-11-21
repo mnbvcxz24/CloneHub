@@ -13,7 +13,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.TextView;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import java.util.HashMap;
@@ -70,16 +70,22 @@ final class FloatingBubble {
         final float density = app.getResources().getDisplayMetrics().density;
         final int size = Math.round(52 * density);
 
-        final TextView bubble = new TextView(app);
-        bubble.setText(label != null && label.length() > 0 ? label.substring(0, 1).toUpperCase() : "F");
-        bubble.setTextColor(Color.WHITE);
-        bubble.setTextSize(20);
-        bubble.setGravity(Gravity.CENTER);
+        final ImageView bubble = new ImageView(app);
+        bubble.setScaleType(ImageView.ScaleType.CENTER_CROP);
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
         bg.setColor(0xE6202124);
         bg.setStroke(Math.round(2 * density), 0xFF8AB4F8);
         bubble.setBackground(bg);
+        bubble.setClipToOutline(true);
+        try {
+            bubble.setImageDrawable(app.getPackageManager().getApplicationIcon(app.getPackageName()));
+        } catch (Throwable iconError) {
+            android.util.Log.w("FukuFloating", "Could not load cloned app icon", iconError);
+            bubble.setImageDrawable(null);
+        }
+        bubble.setContentDescription(label != null && label.length() > 0
+                ? label + " minimized app" : "Minimized app");
 
         final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(size, size,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
