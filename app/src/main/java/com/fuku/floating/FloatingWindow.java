@@ -158,6 +158,14 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         bar.addView(title, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
+        final boolean[] maximized = {false};
+        final boolean[] minimized = {false};
+        final int[][] normalBounds = {null};
+        final int[][] previous = {null};
+        final View[] resizeHandle = {null};
+        final TextView[] maximizeButtonRef = {null};
+        final TextView[] closeButtonRef = {null};
+
         final TextView minimizeButton = button(activity, "–", density, new View.OnClickListener() {
             @Override public void onClick(View view) {
                 WindowManager.LayoutParams p = activity.getWindow().getAttributes();
@@ -167,8 +175,8 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                     if (appContent != null) appContent.setVisibility(View.GONE);
                     if (resizeHandle[0] != null) resizeHandle[0].setVisibility(View.GONE);
                     title.setVisibility(View.GONE);
-                    maximizeButton.setVisibility(View.GONE);
-                    closeButton.setVisibility(View.GONE);
+                    if (maximizeButtonRef[0] != null) maximizeButtonRef[0].setVisibility(View.GONE);
+                    if (closeButtonRef[0] != null) closeButtonRef[0].setVisibility(View.GONE);
                     bar.setBackground(makeBubbleBackground());
                     minimizeButton.setText("F");
                     minimizeButton.setTextSize(18);
@@ -184,8 +192,8 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                     if (appContent != null) appContent.setVisibility(View.VISIBLE);
                     if (resizeHandle[0] != null) resizeHandle[0].setVisibility(View.VISIBLE);
                     title.setVisibility(View.VISIBLE);
-                    maximizeButton.setVisibility(View.VISIBLE);
-                    closeButton.setVisibility(View.VISIBLE);
+                    if (maximizeButtonRef[0] != null) maximizeButtonRef[0].setVisibility(View.VISIBLE);
+                    if (closeButtonRef[0] != null) closeButtonRef[0].setVisibility(View.VISIBLE);
                     bar.setBackgroundColor(0xFF202124);
                     minimizeButton.setText("–");
                     minimizeButton.setTextSize(18);
@@ -206,11 +214,6 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
         });
         bar.addView(minimizeButton);
 
-        final boolean[] maximized = {false};
-        final boolean[] minimized = {false};
-        final int[][] normalBounds = {null};
-        final View[] resizeHandle = {null};
-
         final TextView maximizeButton = button(activity, "□", density, new View.OnClickListener() {
             @Override public void onClick(View view) {
                 WindowManager.LayoutParams p = activity.getWindow().getAttributes();
@@ -230,11 +233,13 @@ public final class FloatingWindow implements Application.ActivityLifecycleCallba
                 activity.getWindow().setAttributes(p);
             }
         });
+        maximizeButtonRef[0] = maximizeButton;
         bar.addView(maximizeButton);
 
         final TextView closeButton = button(activity, "×", density, new View.OnClickListener() {
             @Override public void onClick(View view) { activity.finish(); }
         });
+        closeButtonRef[0] = closeButton;
         bar.addView(closeButton);
 
         bar.setOnTouchListener(new View.OnTouchListener() {
